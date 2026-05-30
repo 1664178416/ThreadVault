@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThreadVault</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Local AI Archive Demo</p>
+          <h1>ThreadVault</h1>
+          <p class="muted">
+            Archive, search, and inspect local Copilot chat sessions.
+          </p>
+        </div>
+
+        <div class="panel">
+          <button id="scan-button" class="primary-button">Rescan Copilot History</button>
+          <div id="stats" class="stats"></div>
+        </div>
+
+        <div class="panel">
+          <label class="field-label" for="search-input">Search</label>
+          <input
+            id="search-input"
+            class="search-input"
+            type="search"
+            placeholder="Search transcripts, prompts, and replies"
+          />
+          <div class="filter-row">
+            <label class="toggle">
+              <input id="favorites-only" type="checkbox" />
+              <span>Favorites only</span>
+            </label>
+            <label class="toggle">
+              <input id="include-archived" type="checkbox" />
+              <span>Show archived</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="list-header">
+            <span>Sessions</span>
+            <span id="session-count">0</span>
+          </div>
+          <div id="session-list" class="session-list"></div>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section id="session-detail" class="detail empty-state">
+          <h2>Select a session</h2>
+          <p>
+            Choose a Copilot conversation on the left to inspect the archived transcript.
+          </p>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

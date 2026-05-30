@@ -1,0 +1,6 @@
+.vscode/**
+app/data/**
+app/**/*.sqlite
+app/**/*.sqlite-shm
+app/**/*.sqlite-wal
+app/**/exports/**

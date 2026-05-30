@@ -1,0 +1,10 @@
+node_modules/
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/exports/
+extension/*.vsix
+extension/app/
+permission_test.txt
+.codex-permission-check/
+.vscode-test/

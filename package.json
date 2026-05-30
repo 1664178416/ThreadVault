@@ -1,0 +1,25 @@
+{
+  "name": "threadvault",
+  "version": "0.1.0",
+  "description": "Local-first archive and search demo for VS Code AI chat histories.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wyh/threadvault.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wyh/threadvault/issues"
+  },
+  "homepage": "https://github.com/wyh/threadvault#readme",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "scan": "node src/server.js --scan-only",
+    "prepare:extension": "node scripts/prepare-extension.mjs"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

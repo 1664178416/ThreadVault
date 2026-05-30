@@ -1,0 +1,89 @@
+{
+  "name": "threadvault-vscode",
+  "displayName": "ThreadVault",
+  "description": "A local-first archive shell for AI coding conversations.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "SEE LICENSE IN LICENSE",
+  "preview": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wyh/threadvault.git"
+  },
+  "homepage": "https://github.com/wyh/threadvault#readme",
+  "bugs": {
+    "url": "https://github.com/wyh/threadvault/issues"
+  },
+  "scripts": {
+    "prepare:app": "node ../scripts/prepare-extension.mjs",
+    "package:vsix": "npm run prepare:app && npx @vscode/vsce package",
+    "publish:vsce": "npm run prepare:app && npx @vscode/vsce publish"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "copilot",
+    "chat",
+    "archive",
+    "search",
+    "history"
+  ],
+  "galleryBanner": {
+    "color": "#0b6e4f",
+    "theme": "light"
+  },
+  "activationEvents": [
+    "onCommand:threadvault.startServer",
+    "onCommand:threadvault.openDashboard",
+    "onCommand:threadvault.openPanel",
+    "onCommand:threadvault.openLogs",
+    "onCommand:threadvault.rescan",
+    "onView:threadvault.actions"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "threadvault",
+          "title": "ThreadVault",
+          "icon": "media/threadvault.svg"
+        }
+      ]
+    },
+    "views": {
+      "threadvault": [
+        {
+          "id": "threadvault.actions",
+          "name": "Quick Actions"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "threadvault.startServer",
+        "title": "ThreadVault: Start Local Server"
+      },
+      {
+        "command": "threadvault.openDashboard",
+        "title": "ThreadVault: Open Dashboard In Browser"
+      },
+      {
+        "command": "threadvault.openPanel",
+        "title": "ThreadVault: Open Embedded Panel"
+      },
+      {
+        "command": "threadvault.openLogs",
+        "title": "ThreadVault: Open Logs"
+      },
+      {
+        "command": "threadvault.rescan",
+        "title": "ThreadVault: Rescan Copilot History"
+      }
+    ]
+  }
+}
