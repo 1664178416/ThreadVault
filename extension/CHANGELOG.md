@@ -6,3 +6,5 @@
 - Added embedded dashboard and browser dashboard entry points
 - Added rescan and log viewing commands
 - Added packaged app bundle support for VSIX distribution
+- Added local ingestion for Codex and Claude Code history
+- Switched database writes to incremental upsert retention

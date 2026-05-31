@@ -27,6 +27,8 @@
   ],
   "keywords": [
     "copilot",
+    "codex",
+    "claude",
     "chat",
     "archive",
     "search",
@@ -82,7 +84,7 @@
       },
       {
         "command": "threadvault.rescan",
-        "title": "ThreadVault: Rescan Copilot History"
+        "title": "ThreadVault: Rescan Local History"
       }
     ]
   }

@@ -10,6 +10,7 @@ const RUNTIME_APP_DIRNAME = "runtime-app";
 
 let serverProcess = null;
 let outputChannel = null;
+let activePanel = null;
 
 class ActionItem extends vscode.TreeItem {
   constructor(label, command, description) {
@@ -59,12 +60,12 @@ class ThreadVaultActionsProvider {
         "Inspect the local ThreadVault server logs"
       ),
       new ActionItem(
-        "Rescan Copilot History",
+        "Rescan Local History",
         {
           command: "threadvault.rescan",
-          title: "Rescan Copilot History"
+          title: "Rescan Local History"
         },
-        "Refresh the local archive from VS Code storage"
+        "Refresh the local archive from supported local sources"
       )
     ];
   }
@@ -233,7 +234,9 @@ async function ensureServer(context) {
 
 function buildPanelHtml() {
   const url = `http://127.0.0.1:${PORT}`;
-  const embedUrl = `${url}/?embed=1`;
+  const urlOrigin = new URL(url).origin;
+  const cacheBust = Date.now();
+  const embedUrl = `${url}/?embed=1&v=${cacheBust}`;
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -247,26 +250,71 @@ function buildPanelHtml() {
         border: 0;
         background: #f5f1e9;
       }
-      .fallback {
-        position: absolute;
-        top: 16px;
-        right: 16px;
-        z-index: 1;
-        background: white;
-        color: #182127;
-        border-radius: 999px;
-        padding: 10px 14px;
-        font-family: sans-serif;
-        border: 1px solid rgba(0,0,0,0.08);
-        text-decoration: none;
-      }
     </style>
   </head>
   <body>
-    <a class="fallback" href="${url}">Open in browser</a>
-    <iframe src="${embedUrl}" title="ThreadVault"></iframe>
+    <iframe id="threadvault-frame" src="${embedUrl}" title="ThreadVault"></iframe>
+    <script>
+      const vscode = acquireVsCodeApi();
+      const frame = document.getElementById("threadvault-frame");
+      const allowedOrigin = ${JSON.stringify(urlOrigin)};
+
+      window.addEventListener("message", (event) => {
+        if (event.source === frame.contentWindow && event.data?.source === "threadvault-app") {
+          vscode.postMessage(event.data);
+          return;
+        }
+
+        if (event.data?.source === "threadvault-host") {
+          frame.contentWindow?.postMessage(event.data, allowedOrigin);
+        }
+      });
+    </script>
   </body>
 </html>`;
+}
+
+function postPanelMessage(payload) {
+  logLine(`Sending host response: ${payload.requestId || "no-request-id"}`);
+  activePanel?.webview.postMessage({
+    source: "threadvault-host",
+    ...payload
+  });
+}
+
+async function openPathInVsCode(targetPath, target) {
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    logLine(`Open failed because path is missing: ${targetPath || "<empty>"}`);
+    return {
+      ok: false,
+      error: "Target path does not exist."
+    };
+  }
+
+  const stat = fs.statSync(targetPath);
+  const targetUri = vscode.Uri.file(targetPath);
+
+  if (target === "workspace" || stat.isDirectory()) {
+    logLine(`Opening workspace path in VS Code: ${targetPath}`);
+    await vscode.commands.executeCommand("vscode.openFolder", targetUri, {
+      forceReuseWindow: false
+    });
+
+    return {
+      ok: true,
+      message: "Workspace opened in VS Code."
+    };
+  }
+
+  logLine(`Opening source file in VS Code: ${targetPath}`);
+  await vscode.window.showTextDocument(targetUri, {
+    preview: false
+  });
+
+  return {
+    ok: true,
+    message: "Source file opened in VS Code."
+  };
 }
 
 function activate(context) {
@@ -320,7 +368,48 @@ function activate(context) {
           enableScripts: true
         }
       );
+      activePanel = panel;
       panel.webview.html = buildPanelHtml();
+      panel.webview.onDidReceiveMessage(async (message) => {
+        if (!message || message.source !== "threadvault-app") {
+          return;
+        }
+
+        logLine(`Received webview action: ${message.type || "unknown"}`);
+
+        if (message.type === "threadvault-open-browser") {
+          await vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${PORT}`));
+          postPanelMessage({
+            requestId: message.requestId,
+            ok: true,
+            message: "Opened ThreadVault in your browser."
+          });
+          return;
+        }
+
+        if (message.type !== "threadvault-open-path") {
+          return;
+        }
+
+        try {
+          const result = await openPathInVsCode(message.payload?.path, message.payload?.target);
+          postPanelMessage({
+            requestId: message.requestId,
+            ...result
+          });
+        } catch (error) {
+          postPanelMessage({
+            requestId: message.requestId,
+            ok: false,
+            error: error.message || String(error)
+          });
+        }
+      });
+      panel.onDidDispose(() => {
+        if (activePanel === panel) {
+          activePanel = null;
+        }
+      });
     })
   );
 
@@ -341,7 +430,9 @@ function activate(context) {
       }
 
       const result = await request("POST", "/api/scan");
-      vscode.window.showInformationMessage(`ThreadVault rescan completed. Imported ${result.importedSessions || 0} sessions.`);
+      vscode.window.showInformationMessage(
+        `ThreadVault rescan completed. Imported ${result.importedSessions || 0}, updated ${result.updatedSessions || 0}, skipped ${result.skippedSessions || 0}.`
+      );
     })
   );
 }
