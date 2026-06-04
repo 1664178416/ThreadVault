@@ -1,256 +1,185 @@
 # ThreadVault
 
-ThreadVault is a local-first demo for archiving and searching AI coding conversations from developer tools. This first implementation focuses on real GitHub Copilot Chat history stored by VS Code and turns it into a searchable local archive with a lightweight browser UI.
+ThreadVault is a local-first archive for AI coding conversations. It scans your local GitHub Copilot Chat, Codex, and Claude Code history, stores it in SQLite, and gives you a clean searchable UI for reviewing, tagging, favoriting, archiving, reopening, and exporting sessions.
 
-## Current Demo Scope
+Everything runs on your machine. No cloud account, sync service, or hosted backend is required.
 
-- Scans local Copilot chat history from VS Code storage
-- Supports both `.json` session files and `.jsonl` incremental session files
-- Normalizes chat sessions into a small local SQLite database
-- Persists personal archive metadata across rescans:
-  - favorites
-  - archived state
-  - tags
-  - notes
-- Exports sessions to Markdown
-- Shows a local UI for:
-  - session list
-  - transcript detail
-  - keyword search
-  - favorites-only and archived filters
-  - opening the source session file in VS Code
-  - opening the related workspace when the path is available
-  - saving personal annotations
-  - exporting Markdown
+## What You Can Do
 
-## Project Structure
+- Search across local AI coding conversations
+- Browse sessions from Copilot Chat, Codex, and Claude Code in one place
+- Open the original transcript file in VS Code
+- Open the related workspace folder when ThreadVault can detect it
+- Add local tags, notes, favorites, and archived state
+- Export any session to Markdown
+- Use the browser UI directly or open the embedded VS Code panel
 
-```text
-ThreadVault/
-|-- data/
-|   `-- threadvault.sqlite
-|-- docs/
-|   |-- implementation-plan.md
-|   |-- schema.md
-|   |-- tasks-mvp.md
-|   `-- technical-design.md
-|-- extension/
-|   |-- media/
-|   |   `-- threadvault.svg
-|   |-- extension.js
-|   `-- package.json
-|-- public/
-|   |-- app.js
-|   |-- index.html
-|   `-- styles.css
-|-- scripts/
-|   `-- prepare-extension.mjs
-|-- src/
-|   |-- adapters/
-|   |   `-- copilot.js
-|   |-- db/
-|   |   |-- database.js
-|   |   `-- repository.js
-|   |-- services/
-|   |   |-- actions.js
-|   |   `-- indexer.js
-|   |-- utils/
-|   |   |-- fs.js
-|   |   |-- jsonPatch.js
-|   |   `-- time.js
-|   |-- config.js
-|   `-- server.js
-|-- package.json
-`-- README.md
-```
+## Quick Start
 
-## Requirements
+Requirements:
 
 - Node.js 24 or newer
-- VS Code installed locally
-- GitHub Copilot Chat history already present in VS Code local storage
+- VS Code, if you want workspace/source-file open actions
+- At least one supported local history source on your machine
 
-## Run The Demo
-
-Start the local app:
+Run the app:
 
 ```bash
-node src/server.js
+npm start
 ```
 
-Then open [http://localhost:3187](http://localhost:3187).
-
-If you only want to test the ingestion pipeline without opening the UI:
-
-```bash
-node src/server.js --scan-only
-```
-
-## Data Source
-
-The current adapter reads from:
+Open:
 
 ```text
-%APPDATA%\Code\User\globalStorage\emptyWindowChatSessions
+http://localhost:3187
 ```
 
-This is a real local Copilot session store used by VS Code on Windows.
-
-## What Is Working Now
-
-- End-to-end Copilot session ingestion
-- SQLite persistence
-- Personal archive metadata that survives rescans
-- Searchable session list
-- Session detail rendering
-- Markdown export
-- Open source transcript file in VS Code
-- Open workspace in VS Code when available
-- Minimal VS Code extension shell with commands and an activity-bar entry
-
-## VS Code Usage And Testing
-
-### Run the local app directly
-
-From the project root:
+ThreadVault scans on startup. To scan manually from the command line:
 
 ```bash
-node src/server.js
+npm run scan
 ```
 
-Then open [http://localhost:3187](http://localhost:3187).
+## First Use
 
-### Test the VS Code extension
+1. Start ThreadVault with `npm start`.
+2. Open `http://localhost:3187`.
+3. Check the source counters for Copilot, Codex, and Claude.
+4. Use search to find an old prompt, error message, file name, or project name.
+5. Select a session to read the transcript.
+6. Use `Favorite`, `Archive`, `Notes`, or `Export` as needed.
 
-1. Open [extension](</C:/Users/wyh/Desktop/ThreadVault/extension>) in VS Code.
+If no sessions appear, make sure you have used at least one supported tool locally and that its history files exist on disk.
+
+## Supported Sources
+
+ThreadVault currently reads:
+
+| Source | Default location |
+| --- | --- |
+| GitHub Copilot Chat | `%APPDATA%\Code\User\globalStorage\emptyWindowChatSessions` |
+| Codex | `%USERPROFILE%\.codex\sessions` |
+| Claude Code | `%USERPROFILE%\.claude\projects` |
+
+Claude subagent logs are skipped for now so the archive stays focused on main user-visible sessions.
+
+## UI Guide
+
+The dashboard has three main areas:
+
+- `Overview`: source counts, message count, favorites, archived sessions, and rescan
+- `Sessions`: searchable session list with source, workspace, time, summary, and tags
+- `Transcript`: selected conversation, local annotations, source/workspace actions, export, and expandable process details
+
+Tool and system traces are collapsed by default so the main conversation stays readable.
+
+## VS Code Extension
+
+The repository includes a minimal VS Code extension shell.
+
+For local development:
+
+1. Open the `extension` folder in VS Code.
 2. Press `F5`.
-3. Choose `Run ThreadVault Extension`.
-4. In the Extension Development Host, open the `ThreadVault` activity bar.
-5. Run:
-   - `Start Local Server`
-   - `Open Embedded Panel`
-   - `Rescan Copilot History`
-   - `Open Logs` if you want to inspect server output
+3. In the Extension Development Host, open the ThreadVault activity bar.
+4. Run `Start Local Server`.
+5. Run `Open Embedded Panel`.
 
-In development mode, the extension reads the app source directly from the repository root, so you do not need a packaging build step to iterate.
+Useful commands:
 
-### Suggested manual test checklist
+- `ThreadVault: Start Local Server`
+- `ThreadVault: Open Embedded Panel`
+- `ThreadVault: Open Dashboard In Browser`
+- `ThreadVault: Rescan Local History`
+- `ThreadVault: Open Logs`
 
-1. Start the local server from the extension.
-2. Confirm the embedded panel loads.
-3. Run a rescan and verify the imported session count updates.
-4. Search for a known keyword from a Copilot conversation.
-5. Open one session and save a note or tags.
-6. Export a session to Markdown and confirm a file appears in [data/exports](</C:/Users/wyh/Desktop/ThreadVault/data/exports>).
-7. Use `Open source file in VS Code` and `Open workspace in VS Code` on a session that has paths available.
+In development mode, the extension reads the app from the repository root, so you do not need to package anything for normal iteration.
 
-## Known Limitations
+## Packaging The Extension
 
-- Current demo only supports Copilot
-- Some Copilot sessions with empty request lists are skipped
-- Search is currently lexical only
-- Native reopen into the original Copilot chat thread is not implemented yet
-- Workspace extraction is best-effort and may be missing for many sessions
-- The VS Code extension currently embeds the local dashboard rather than fully reimplementing the UI natively
-
-## Recommended Next Steps
-
-1. Replace the embedded dashboard shell with a native VS Code tree + webview experience.
-2. Add more adapters, such as Codex or Claude-related sources.
-3. Improve workspace recovery and source-to-session linking.
-4. Add export to JSON alongside Markdown.
-5. Add secret redaction rules before indexing.
-6. Add background watching instead of scan-on-demand only.
-
-## VS Code Extension Shell
-
-There is now a minimal extension shell in [extension](</C:/Users/wyh/Desktop/ThreadVault/extension>).
-
-To try it locally:
-
-1. Open [extension](</C:/Users/wyh/Desktop/ThreadVault/extension>) in VS Code.
-2. Press `F5` to launch an Extension Development Host.
-3. Use the `ThreadVault` activity bar entry or the command palette commands:
-   - `ThreadVault: Start Local Server`
-   - `ThreadVault: Open Embedded Panel`
-   - `ThreadVault: Open Dashboard In Browser`
-   - `ThreadVault: Open Logs`
-   - `ThreadVault: Rescan Copilot History`
-
-## Preparing For GitHub
-
-Before pushing this project to GitHub, review local-only data and generated artifacts:
-
-- [data](</C:/Users/wyh/Desktop/ThreadVault/data>) may contain personal archived chat data and exports.
-- `permission_test.txt` is local scratch data.
-- `extension/app` is a generated packaging artifact and is ignored by Git.
-
-The repository now includes a [`.gitignore`](</C:/Users/wyh/Desktop/ThreadVault/.gitignore>) that excludes the local database, exports, VSIX packages, and other machine-local files.
-
-## Uploading To GitHub
-
-If this folder is not yet a standalone Git repository, initialize one from the project root:
-
-```bash
-git init -b main
-git add .
-git commit -m "Initial ThreadVault demo"
-```
-
-Then create an empty GitHub repository first, and add the remote:
-
-```bash
-git remote add origin REMOTE-URL
-git push -u origin main
-```
-
-If you use GitHub CLI, you can also create and push in one flow:
-
-```bash
-gh repo create --source=. --private --push
-```
-
-Recommended before the first push:
-
-1. Confirm `data/` does not contain anything private you do not want online.
-2. Review [LICENSE](/C:/Users/wyh/Desktop/ThreadVault/LICENSE), [CHANGELOG.md](/C:/Users/wyh/Desktop/ThreadVault/CHANGELOG.md), and [SUPPORT.md](/C:/Users/wyh/Desktop/ThreadVault/SUPPORT.md) and adjust the owner name or support links if needed.
-3. Add repository metadata such as screenshots and a short roadmap.
-4. Fix the Git repository boundary so this folder is tracked independently instead of being treated as part of `C:/`.
-
-## Publishing To The VS Code Marketplace
-
-The current extension can be packaged today, but before a public Marketplace release you should finish a small release checklist:
-
-1. Update `extension/package.json` with your real `publisher`, version, description, repository URL, keywords, and support metadata.
-2. Replace the placeholder repository metadata in [package.json](/C:/Users/wyh/Desktop/ThreadVault/package.json) and [extension/package.json](/C:/Users/wyh/Desktop/ThreadVault/extension/package.json) with your real GitHub repository and Marketplace publisher information.
-3. Review the extension release files in [extension](</C:/Users/wyh/Desktop/ThreadVault/extension>):
-   - [README.md](/C:/Users/wyh/Desktop/ThreadVault/extension/README.md)
-   - [CHANGELOG.md](/C:/Users/wyh/Desktop/ThreadVault/extension/CHANGELOG.md)
-   - [LICENSE](/C:/Users/wyh/Desktop/ThreadVault/extension/LICENSE)
-   - [SUPPORT.md](/C:/Users/wyh/Desktop/ThreadVault/extension/SUPPORT.md)
-4. From the project root, generate the bundled runtime app:
+Prepare the app bundle:
 
 ```bash
 npm run prepare:extension
 ```
 
-5. In the [extension](</C:/Users/wyh/Desktop/ThreadVault/extension>) folder, package a VSIX:
+Package from the `extension` folder:
 
 ```bash
-vsce package
+npx @vscode/vsce package
 ```
 
-6. Test the `.vsix` locally:
+Install the generated VSIX:
 
 ```bash
 code --install-extension threadvault-vscode-0.1.0.vsix
 ```
 
-7. After local verification, publish with `vsce publish` or upload the generated VSIX manually in the Marketplace publisher management page.
+Before publishing publicly, update the extension metadata in `extension/package.json`, especially `publisher`, `repository`, `homepage`, `bugs`, and `version`.
 
-For a stronger first public release, I recommend doing these before publishing:
+## Data And Privacy
 
-- Replace the placeholder publisher value `local`
-- Add screenshots or a short demo GIF
-- Add a privacy note explaining that chat history stays local
-- Consider adding a native session tree instead of only the embedded dashboard shell
+ThreadVault indexes local chat history into:
+
+```text
+data/threadvault.sqlite
+```
+
+Markdown exports are written to:
+
+```text
+data/exports/
+```
+
+These files may contain private prompts, code, paths, notes, and transcripts. They are ignored by `.gitignore` and should not be committed.
+
+Before pushing to GitHub, double-check:
+
+```bash
+git status --short
+```
+
+Make sure `data/`, local exports, and packaged `.vsix` files are not staged.
+
+## Useful Commands
+
+```bash
+# Start the local web app
+npm start
+
+# Same as start, useful during development
+npm run dev
+
+# Scan local history and print the result
+npm run scan
+
+# Copy src/ and public/ into extension/app for packaging
+npm run prepare:extension
+```
+
+## Project Structure
+
+```text
+ThreadVault/
+|-- public/              # Browser UI
+|-- src/
+|   |-- adapters/        # Copilot, Codex, Claude scanners
+|   |-- db/              # SQLite schema and queries
+|   |-- services/        # Scan, export, open actions
+|   `-- server.js        # Local HTTP server
+|-- extension/           # VS Code extension shell
+|-- scripts/             # Packaging helpers
+|-- docs/                # Design notes
+`-- data/                # Local SQLite DB and exports, ignored by git
+```
+
+## Current Limitations
+
+- ThreadVault can reopen source files and workspaces, but it does not yet jump back into the original third-party chat UI.
+- Search is lexical full-text search, not semantic search.
+- Some third-party history formats may change over time; parser confidence is intentionally conservative.
+- The VS Code extension currently embeds the dashboard instead of rendering a fully native VS Code tree/detail interface.
+
+## License
+
+MIT

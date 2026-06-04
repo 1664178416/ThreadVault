@@ -13,7 +13,10 @@ function slugify(value) {
 }
 
 function fence(content) {
-  return `\`\`\`text\n${content || ""}\n\`\`\``;
+  const text = String(content || "");
+  const fenceSize = Math.max(3, ...Array.from(text.matchAll(/`+/g), (match) => match[0].length + 1));
+  const marker = "`".repeat(fenceSize);
+  return `${marker}text\n${text}\n${marker}`;
 }
 
 function renderReferences(references) {
@@ -50,11 +53,15 @@ function renderAnnotation(annotation) {
 }
 
 function buildMarkdown(session) {
+  const sourcePath = session.sourcePath || "Unknown";
   const lines = [
     `# ${session.title}`,
     "",
+    "> Exported from ThreadVault. This file may contain private prompts, paths, notes, and transcripts.",
+    "",
     "- Source: " + session.sourceLabel,
     "- Source session id: " + (session.sourceSessionId || "Unknown"),
+    "- Source path: " + sourcePath,
     "- Workspace: " + (session.workspacePath || "Unknown"),
     "- Created: " + (session.createdAt || "Unknown"),
     "- Updated: " + (session.updatedAt || "Unknown"),

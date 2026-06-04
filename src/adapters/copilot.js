@@ -4,7 +4,7 @@ import path from "node:path";
 import { COPILOT_EMPTY_WINDOW_DIR } from "../config.js";
 import { listFiles, readJsonFile } from "../utils/fs.js";
 import { applyJsonLineOperations } from "../utils/jsonPatch.js";
-import { deriveTitle, hashText, snippet } from "../utils/text.js";
+import { displayText, deriveTitle, hasInternalContext, hashText, snippet } from "../utils/text.js";
 import { toIsoFromEpoch } from "../utils/time.js";
 
 function flattenResponseChunks(response = []) {
@@ -68,17 +68,20 @@ function normalizeSession(rawSession, filePath) {
         .join("\n\n") ||
       "";
     if (userText) {
+      const visibleUserText = displayText(userText);
       messages.push({
         id: `${sessionId}:user:${ordinal}`,
         ordinal,
-        role: "user",
-        content: userText,
+        role: visibleUserText ? "user" : "tool",
+        content: visibleUserText || userText,
         timestamp: toIsoFromEpoch(request.timestamp),
         model: request.modelId || null,
         referencedFiles: [],
         metadata: {
           requestId: request.requestId || null,
-          mode: request.modeInfo?.modeId || rawSession.mode?.id || null
+          mode: request.modeInfo?.modeId || rawSession.mode?.id || null,
+          hiddenByDefault: !visibleUserText,
+          originalHiddenByDefault: hasInternalContext(userText)
         }
       });
       ordinal += 1;
@@ -121,7 +124,7 @@ function normalizeSession(rawSession, filePath) {
   }
 
   const firstUserMessage = messages.find((message) => message.role === "user")?.content || "";
-  const title = deriveTitle(rawSession.customTitle, firstUserMessage);
+  const title = deriveTitle(rawSession.customTitle, firstUserMessage, "Untitled Copilot Session");
   const workspacePath = findWorkspacePath(rawSession);
   const searchableText = messages.map((message) => message.content).join("\n");
   const fingerprint = hashText([

@@ -1,12 +1,13 @@
-import { scanCopilotSessions } from "../adapters/copilot.js";
-import { replaceAllSessions, getStats, listSessions, getSessionDetail, updateSessionAnnotation } from "../db/repository.js";
+import { scanAllSources } from "../adapters/index.js";
+import { getStats, getSessionDetail, listSessions, updateSessionAnnotation, upsertImportedSessions } from "../db/repository.js";
 
 export function runFullScan() {
-  const sessions = scanCopilotSessions();
-  replaceAllSessions(sessions);
+  const { sessions, sourceStats } = scanAllSources();
+  const writeStats = upsertImportedSessions(sessions);
 
   return {
-    importedSessions: sessions.length,
+    ...writeStats,
+    sourceStats,
     stats: getStats()
   };
 }

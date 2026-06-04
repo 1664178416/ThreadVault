@@ -1,4 +1,5 @@
 .vscode/**
+*.vsix
 app/data/**
 app/**/*.sqlite
 app/**/*.sqlite-shm

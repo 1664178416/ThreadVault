@@ -8,55 +8,122 @@
   </head>
   <body>
     <div class="layout">
-      <aside class="sidebar">
-        <div class="brand">
-          <p class="eyebrow">Local AI Archive Demo</p>
-          <h1>ThreadVault</h1>
-          <p class="muted">
-            Archive, search, and inspect local Copilot chat sessions.
-          </p>
-        </div>
+      <aside class="sidebar-rail">
+        <section class="rail-brand">
+          <div class="icon-slot brand-slot" data-icon-hint="SVG: vault door or archive box mark" title="SVG: vault door or archive box mark" aria-hidden="true"></div>
+          <span class="rail-brand-label">Vault</span>
+        </section>
 
-        <div class="panel">
-          <button id="scan-button" class="primary-button">Rescan Copilot History</button>
-          <div id="stats" class="stats"></div>
-        </div>
-
-        <div class="panel">
-          <label class="field-label" for="search-input">Search</label>
-          <input
-            id="search-input"
-            class="search-input"
-            type="search"
-            placeholder="Search transcripts, prompts, and replies"
-          />
-          <div class="filter-row">
-            <label class="toggle">
-              <input id="favorites-only" type="checkbox" />
-              <span>Favorites only</span>
-            </label>
-            <label class="toggle">
-              <input id="include-archived" type="checkbox" />
-              <span>Show archived</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="list-header">
-            <span>Sessions</span>
-            <span id="session-count">0</span>
-          </div>
-          <div id="session-list" class="session-list"></div>
-        </div>
+        <nav class="rail-nav" aria-label="ThreadVault navigation">
+          <button class="rail-button is-primary" type="button" data-scroll-target="sidebar-overview">
+            <span class="mini-icon-slot" data-icon-hint="SVG: dashboard grid" title="SVG: dashboard grid" aria-hidden="true"></span>
+            <span class="rail-label">Overview</span>
+          </button>
+          <button class="rail-button" type="button" data-scroll-target="sidebar-sessions">
+            <span class="mini-icon-slot" data-icon-hint="SVG: stacked chat threads" title="SVG: stacked chat threads" aria-hidden="true"></span>
+            <span class="rail-label">Sessions</span>
+          </button>
+        </nav>
       </aside>
 
+      <aside class="sidebar-drawer">
+        <section class="brand-shell">
+          <div class="brand-row">
+            <div class="brand-mark">
+              <div class="icon-slot brand-slot" data-icon-hint="SVG: vault door or archive box mark" title="SVG: vault door or archive box mark" aria-hidden="true"></div>
+            </div>
+            <div class="brand-copy">
+              <p class="eyebrow">Local AI Archive</p>
+              <h1>ThreadVault</h1>
+            </div>
+          </div>
+        </section>
+
+        <section id="sidebar-overview" class="drawer-section drawer-anchor-section">
+          <section class="panel panel-overview">
+            <div class="panel-heading panel-heading-compact">
+              <p class="panel-title">Overview</p>
+              <button id="scan-button" class="primary-button overview-scan-button">Rescan</button>
+            </div>
+            <div class="overview-command-row">
+              <div class="overview-copy">
+                <p class="overview-kicker">Library snapshot</p>
+                <p id="overview-summary" class="overview-summary">Waiting for local sessions to load.</p>
+              </div>
+            </div>
+            <div class="overview-focus-row">
+              <span class="scope-title">Current focus</span>
+              <span id="overview-focus" class="overview-focus">All sources</span>
+            </div>
+            <div class="scope-block scope-block-first">
+              <div class="scope-header">
+                <span class="scope-title">Sources</span>
+              </div>
+              <div id="stats" class="source-grid"></div>
+            </div>
+            <div class="scope-block">
+              <div class="scope-header">
+                <span class="scope-title">Filters</span>
+              </div>
+              <div class="toggle-row">
+                <label class="toggle">
+                  <input id="favorites-only" type="checkbox" />
+                  <span>Favorites only</span>
+                </label>
+                <label class="toggle">
+                  <input id="include-archived" type="checkbox" />
+                  <span>Include archived</span>
+                </label>
+              </div>
+              <div id="status-strip" class="status-strip"></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="sidebar-sessions" class="drawer-section drawer-anchor-section">
+          <section class="panel panel-sessions">
+            <div class="list-header">
+              <div>
+                <span>Sessions</span>
+                <p id="list-state" class="list-state">All sources</p>
+              </div>
+              <span id="session-count">0</span>
+            </div>
+            <input
+              id="search-input"
+              class="search-input session-search"
+              type="search"
+              placeholder="Search sessions"
+            />
+            <div id="session-list" class="session-list"></div>
+          </section>
+        </section>
+      </aside>
+
+      <button
+        id="drawer-resizer"
+        class="drawer-resizer"
+        type="button"
+        aria-label="Resize session library"
+        title="Drag to resize the session library"
+      ></button>
+
+      <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" hidden aria-label="Close session library"></button>
+
       <main class="content">
+        <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+        <div class="topbar">
+          <div class="topbar-left">
+            <button id="sidebar-toggle" class="secondary-button embed-toggle" type="button">Library</button>
+            <div id="topbar-active-state" class="topbar-active-state">All sources</div>
+          </div>
+          <div class="topbar-right">
+            <button id="open-browser-button" class="ghost-button topbar-browser-button" type="button">Open in browser</button>
+          </div>
+        </div>
         <section id="session-detail" class="detail empty-state">
           <h2>Select a session</h2>
-          <p>
-            Choose a Copilot conversation on the left to inspect the archived transcript.
-          </p>
+          <p class="muted">Your local archive is ready.</p>
         </section>
       </main>
     </div>
