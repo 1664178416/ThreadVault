@@ -1,15 +1,29 @@
 import path from "node:path";
 
-import { EXPORT_DIR } from "../config.js";
+import { EXPORT_DIR, MEMORY_DIR } from "../config.js";
 import { getSessionDetail } from "../db/repository.js";
 import { ensureDir, writeText } from "../utils/fs.js";
 
-function slugify(value) {
-  return String(value || "session")
+function slugify(value, fallback = "session") {
+  return String(value || fallback)
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "session";
+    .slice(0, 80) || fallback;
+}
+
+function dateBucket(session) {
+  const date = new Date(session.updatedAt || session.createdAt || Date.now());
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = safeDate.getFullYear();
+  const month = String(safeDate.getMonth() + 1).padStart(2, "0");
+  const day = String(safeDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function sessionFileName(session) {
+  return `${slugify(session.title)}-${slugify(session.sourceSessionId || session.id, "thread")}.md`;
 }
 
 function fence(content) {
@@ -109,13 +123,36 @@ export function exportSessionToMarkdown(sessionId) {
   }
 
   ensureDir(EXPORT_DIR);
-  const fileName = `${slugify(session.title)}-${slugify(session.sourceSessionId || session.id)}.md`;
+  const fileName = sessionFileName(session);
   const exportPath = path.join(EXPORT_DIR, fileName);
   writeText(exportPath, buildMarkdown(session));
 
   return {
     ok: true,
     path: exportPath,
+    fileName
+  };
+}
+
+export function saveSessionToMemory(sessionId) {
+  const session = getSessionDetail(sessionId);
+  if (!session) {
+    return {
+      ok: false,
+      error: "Session not found."
+    };
+  }
+
+  const dateDir = dateBucket(session);
+  const sourceDir = slugify(session.sourceId || session.sourceLabel, "source");
+  const workspaceDir = slugify(session.workspaceName || "no-workspace", "no-workspace");
+  const fileName = sessionFileName(session);
+  const memoryPath = path.join(MEMORY_DIR, dateDir, sourceDir, workspaceDir, fileName);
+  writeText(memoryPath, buildMarkdown(session));
+
+  return {
+    ok: true,
+    path: memoryPath,
     fileName
   };
 }

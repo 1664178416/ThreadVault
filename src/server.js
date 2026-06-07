@@ -7,7 +7,7 @@ import { APP_NAME, APP_PORT, DATA_DIR, PUBLIC_DIR } from "./config.js";
 import { ensureDir } from "./utils/fs.js";
 import { runFullScan, getDashboardData, getSessionById, saveSessionAnnotation } from "./services/indexer.js";
 import { openInVsCode } from "./services/actions.js";
-import { exportSessionToMarkdown } from "./services/exporter.js";
+import { exportSessionToMarkdown, saveSessionToMemory } from "./services/exporter.js";
 
 ensureDir(DATA_DIR);
 
@@ -218,8 +218,30 @@ function handleApi(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/api/export") {
     readBody(request, response, (payload) => {
-      const result = exportSessionToMarkdown(payload.sessionId);
-      sendJson(response, result.ok ? 200 : 404, result);
+      try {
+        const result = exportSessionToMarkdown(payload.sessionId);
+        sendJson(response, result.ok ? 200 : 404, result);
+      } catch (error) {
+        sendJson(response, 500, {
+          ok: false,
+          error: String(error.message || error)
+        });
+      }
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/memory") {
+    readBody(request, response, (payload) => {
+      try {
+        const result = saveSessionToMemory(payload.sessionId);
+        sendJson(response, result.ok ? 200 : 404, result);
+      } catch (error) {
+        sendJson(response, 500, {
+          ok: false,
+          error: String(error.message || error)
+        });
+      }
     });
     return;
   }

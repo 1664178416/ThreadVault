@@ -2,12 +2,10 @@ const SETTINGS = {
   storageKey: "threadvault.settings",
   defaults: {
     theme: "light",
-    density: "comfort",
     language: "en"
   },
   options: {
     theme: ["light", "dim"],
-    density: ["comfort", "compact"],
     language: ["en", "zh"]
   }
 };
@@ -27,9 +25,6 @@ const I18N = {
     copyFailed: "Unable to copy link.",
     copySuccess: "Session link copied.",
     currentFocus: "Current focus",
-    density: "Density",
-    densityComfort: "Comfort",
-    densityCompact: "Compact",
     dismissNotice: "Dismiss notice",
     drawerResize: "Resize session library",
     drawerResizeTitle: "Drag to resize the session library",
@@ -46,7 +41,11 @@ const I18N = {
     librarySnapshot: "Library snapshot",
     libraryTotal: "Library total",
     loadFailed: "Failed to load",
+    memoryFailed: "Memory save failed.",
+    memorySaved: "Saved to memory",
     messages: "messages",
+    saveMemory: "Memory",
+    saveMemoryTitle: "Save to memory",
     openInBrowser: "Open in browser",
     opening: "Opening",
     overview: "Overview",
@@ -79,6 +78,7 @@ const I18N = {
     scanSkipped: "skipped",
     scanUpdated: "updated",
     saving: "Saving",
+    savingMemory: "Saving",
     scanning: "Scanning",
     search: "Search",
     searchPrefix: "Search",
@@ -86,7 +86,7 @@ const I18N = {
     selectSession: "Select a session",
     sessions: "Sessions",
     settings: "Settings",
-    settingsKicker: "Interface",
+    settingsKicker: "Appearance",
     sidebarClose: "Close session library",
     source: "Source",
     sourceFile: "Source file",
@@ -97,7 +97,7 @@ const I18N = {
     systemRole: "System",
     tags: "Tags",
     theme: "Theme",
-    themeDim: "Dim",
+    themeDim: "Graphite",
     themeLight: "Light",
     transcript: "Transcript",
     unfavoriteAction: "Unfavorite",
@@ -125,9 +125,6 @@ const I18N = {
     copyFailed: "\u65e0\u6cd5\u590d\u5236\u94fe\u63a5\u3002",
     copySuccess: "\u4f1a\u8bdd\u94fe\u63a5\u5df2\u590d\u5236\u3002",
     currentFocus: "\u5f53\u524d\u8303\u56f4",
-    density: "\u5bc6\u5ea6",
-    densityComfort: "\u8212\u9002",
-    densityCompact: "\u7d27\u51d1",
     dismissNotice: "\u5173\u95ed\u901a\u77e5",
     drawerResize: "\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
     drawerResizeTitle: "\u62d6\u52a8\u4ee5\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
@@ -144,7 +141,11 @@ const I18N = {
     librarySnapshot: "\u8d44\u6599\u5e93\u6982\u89c8",
     libraryTotal: "\u6d88\u606f\u603b\u91cf",
     loadFailed: "\u52a0\u8f7d\u5931\u8d25",
+    memoryFailed: "\u6c89\u6dc0\u5931\u8d25\u3002",
+    memorySaved: "\u5df2\u6c89\u6dc0\u5230",
     messages: "\u6761\u6d88\u606f",
+    saveMemory: "\u6c89\u6dc0",
+    saveMemoryTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u6c89\u6dc0\u4e3a Markdown",
     openInBrowser: "\u5728\u6d4f\u89c8\u5668\u6253\u5f00",
     opening: "\u6253\u5f00\u4e2d",
     overview: "\u6982\u89c8",
@@ -177,6 +178,7 @@ const I18N = {
     scanSkipped: "\u8df3\u8fc7",
     scanUpdated: "\u66f4\u65b0",
     saving: "\u4fdd\u5b58\u4e2d",
+    savingMemory: "\u6c89\u6dc0\u4e2d",
     scanning: "\u626b\u63cf\u4e2d",
     search: "\u641c\u7d22",
     searchPrefix: "\u641c\u7d22",
@@ -184,7 +186,7 @@ const I18N = {
     selectSession: "\u9009\u62e9\u4e00\u4e2a\u4f1a\u8bdd",
     sessions: "\u4f1a\u8bdd",
     settings: "\u8bbe\u7f6e",
-    settingsKicker: "\u754c\u9762",
+    settingsKicker: "\u5916\u89c2",
     sidebarClose: "\u5173\u95ed\u4f1a\u8bdd\u5e93",
     source: "\u6765\u6e90",
     sourceFile: "\u6e90\u6587\u4ef6",
@@ -195,7 +197,7 @@ const I18N = {
     systemRole: "\u7cfb\u7edf",
     tags: "\u6807\u7b7e",
     theme: "\u4e3b\u9898",
-    themeDim: "\u67d4\u548c",
+    themeDim: "\u77f3\u58a8",
     themeLight: "\u4eae\u8272",
     transcript: "\u8f6c\u5f55",
     unfavoriteAction: "\u53d6\u6d88\u6536\u85cf",
@@ -212,11 +214,10 @@ const I18N = {
 };
 
 function normalizeSettings(value) {
-  const next = { ...SETTINGS.defaults, ...(value || {}) };
+  const source = value && typeof value === "object" ? value : {};
+  const next = { ...SETTINGS.defaults };
   for (const [key, options] of Object.entries(SETTINGS.options)) {
-    if (!options.includes(next[key])) {
-      next[key] = SETTINGS.defaults[key];
-    }
+    next[key] = options.includes(source[key]) ? source[key] : SETTINGS.defaults[key];
   }
   return next;
 }
@@ -256,7 +257,6 @@ let searchTimer = null;
 
 const elements = {
   stats: document.querySelector("#stats"),
-  statusStrip: document.querySelector("#status-strip"),
   sessionStatusStrip: document.querySelector("#session-status-strip"),
   scanButton: document.querySelector("#scan-button"),
   searchInput: document.querySelector("#search-input"),
@@ -305,10 +305,10 @@ const ICON_LABELS = {
   export: "Export",
   favorite: "Favorite",
   favoriteFilled: "Favorited",
-  density: "Density",
   filter: "Filter",
   language: "Language",
   link: "Copy link",
+  memory: "Memory",
   messages: "Messages",
   note: "Notes",
   openSource: "Source file",
@@ -329,13 +329,13 @@ const ICON_LABEL_KEYS = {
   archive: "archiveAction",
   browser: "openInBrowser",
   close: "dismissNotice",
-  density: "density",
   export: "export",
   favorite: "favoriteAction",
   favoriteFilled: "favorites",
   filter: "filters",
   language: "language",
   link: "copyLink",
+  memory: "saveMemory",
   messages: "messages",
   note: "notes",
   openSource: "sourceFile",
@@ -394,14 +394,6 @@ const ICON_PATHS = {
     <path d="M14.7 13.2h.05" />
     <path d="M10 16h4" />
   `,
-  density: `
-    <path d="M5.25 6.75h13.5" />
-    <path d="M5.25 12h13.5" />
-    <path d="M5.25 17.25h13.5" />
-    <path d="M8.25 5.25v3" />
-    <path d="M15.75 10.5v3" />
-    <path d="M10.75 15.75v3" />
-  `,
   export: `
     <path d="M12 4.5v9" />
     <path d="m8.5 10 3.5 3.5 3.5-3.5" />
@@ -427,6 +419,13 @@ const ICON_PATHS = {
     <path d="M9.75 8.25 8.4 6.9a3.15 3.15 0 0 0-4.45 4.45l2.4 2.4a3.15 3.15 0 0 0 4.45 0l.7-.7" />
     <path d="m14.25 15.75 1.35 1.35a3.15 3.15 0 0 0 4.45-4.45l-2.4-2.4a3.15 3.15 0 0 0-4.45 0l-.7.7" />
     <path d="m9.25 14.75 5.5-5.5" />
+  `,
+  memory: `
+    <path d="M5.5 6.25h13v12.5h-13z" />
+    <path d="M8.25 6.25V4.75h7.5v1.5" />
+    <path d="M8.5 10.25h7" />
+    <path d="M8.5 13.25h4.5" />
+    <path d="M16.6 14.45 17.25 16l1.55.65-1.55.65-.65 1.55-.65-1.55-1.55-.65 1.55-.65.65-1.55Z" />
   `,
   messages: `
     <path d="M5 6.25h10.75v7.5H9.2L5 17.25v-11Z" />
@@ -565,7 +564,7 @@ function applyLocalizedText() {
 function applySettings() {
   document.documentElement.lang = state.settings.language === "zh" ? "zh-CN" : "en";
   document.body.classList.toggle("theme-dim", state.settings.theme === "dim");
-  document.body.classList.toggle("density-compact", state.settings.density === "compact");
+  document.body.classList.add("density-compact");
 
   for (const button of elements.settingButtons) {
     const key = button.getAttribute("data-setting");
@@ -736,6 +735,12 @@ async function copyText(value) {
 
 if (isEmbedMode) {
   document.body.classList.add("embed-mode");
+}
+
+function applyHostMode() {
+  if (elements.openBrowserButton) {
+    elements.openBrowserButton.hidden = !isEmbedMode;
+  }
 }
 
 function clamp(value, min, max) {
@@ -1404,10 +1409,9 @@ function renderStats(stats) {
     });
   }
 
-  const filterHtml = filterPanelHtml(stats);
-  const filterContainers = [elements.statusStrip, elements.sessionStatusStrip].filter(Boolean);
-  for (const container of filterContainers) {
-    container.innerHTML = filterHtml;
+  const filterContainer = elements.sessionStatusStrip;
+  if (filterContainer) {
+    filterContainer.innerHTML = filterPanelHtml(stats);
   }
 
   if (elements.overviewMetrics) {
@@ -1429,8 +1433,8 @@ function renderStats(stats) {
     `;
   }
 
-  for (const container of filterContainers) {
-    for (const node of container.querySelectorAll("[data-status-filter]")) {
+  if (filterContainer) {
+    for (const node of filterContainer.querySelectorAll("[data-status-filter]")) {
       node.addEventListener("click", () => {
         const filter = node.getAttribute("data-status-filter");
         if (filter === "favorites") {
@@ -1637,6 +1641,10 @@ function renderSessionDetail(session) {
             ${iconSlot("export")}
             <span>${escapeHtml(t("export"))}</span>
           </button>
+          <button class="ghost-button action-button" type="button" data-action="save-memory" title="${escapeHtml(t("saveMemoryTitle"))}">
+            ${iconSlot("memory")}
+            <span>${escapeHtml(t("saveMemory"))}</span>
+          </button>
           <button class="ghost-button action-button" type="button" data-action="copy-link" title="${escapeHtml(t("copyLink"))}">
             ${iconSlot("link")}
             <span>${escapeHtml(t("copyLink"))}</span>
@@ -1826,6 +1834,27 @@ function renderSessionDetail(session) {
           return;
         }
         const message = `${t("exportedTo")} ${result.path}`;
+        if (status) {
+          status.textContent = message;
+        }
+        showToast(message, "success");
+      } catch (error) {
+        showToast(String(error.message || error), "warning");
+      } finally {
+        resetBusy();
+      }
+      return;
+    }
+
+    if (action === "save-memory") {
+      setBusy(t("savingMemory"));
+      try {
+        const result = await postJson("/api/memory", { sessionId: session.id });
+        if (!result.ok) {
+          showToast(result.error || t("memoryFailed"), "warning");
+          return;
+        }
+        const message = `${t("memorySaved")} ${result.path}`;
         if (status) {
           status.textContent = message;
         }
@@ -2133,6 +2162,7 @@ window.addEventListener("popstate", () => {
 });
 
 hydrateStaticIcons();
+applyHostMode();
 applySettings();
 initDrawerResize();
 updateRailButtons();

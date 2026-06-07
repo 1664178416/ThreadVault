@@ -12,6 +12,7 @@ Everything runs on your machine. No cloud account, sync service, or hosted backe
 - Open the related workspace folder when ThreadVault can detect it
 - Add local tags, notes, favorites, and archived state
 - Export any session to Markdown
+- Save selected sessions as long-term Markdown memory
 - Use the browser UI directly or open the embedded VS Code panel
 
 ## Quick Start
@@ -47,7 +48,7 @@ npm run scan
 3. Check the source counters for Copilot, Codex, and Claude.
 4. Use search to find an old prompt, error message, file name, or project name.
 5. Select a session to read the transcript.
-6. Use `Favorite`, `Archive`, `Notes`, or `Export` as needed.
+6. Use `Favorite`, `Archive`, `Notes`, `Export`, or `Memory` as needed.
 
 If no sessions appear, make sure you have used at least one supported tool locally and that its history files exist on disk.
 
@@ -69,9 +70,31 @@ The dashboard has three main areas:
 
 - `Overview`: source counts, message count, favorites, archived sessions, and rescan
 - `Sessions`: searchable session list with source, workspace, time, summary, and tags
-- `Transcript`: selected conversation, local annotations, source/workspace actions, export, and expandable process details
+- `Transcript`: selected conversation, local annotations, source/workspace actions, Markdown export, memory save, and expandable process details
 
 Tool and system traces are collapsed by default so the main conversation stays readable.
+
+## Markdown Memory
+
+Use the `Memory` action on a session when you want to keep a high-value conversation as a durable Markdown note.
+
+By default, memory files are written to:
+
+```text
+data/memory/YYYY-MM-DD/<source>/<workspace>/<session>.md
+```
+
+Set a custom memory directory before starting ThreadVault:
+
+```bash
+THREADVAULT_MEMORY_DIR=/path/to/your/notes npm start
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:THREADVAULT_MEMORY_DIR="D:\Notes\ThreadVault"; npm start
+```
 
 ## VS Code Extension
 
@@ -129,6 +152,12 @@ Markdown exports are written to:
 
 ```text
 data/exports/
+```
+
+Saved memory notes are written to:
+
+```text
+data/memory/
 ```
 
 These files may contain private prompts, code, paths, notes, and transcripts. They are ignored by `.gitignore` and should not be committed.

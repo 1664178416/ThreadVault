@@ -8,6 +8,7 @@ export const APP_PORT = Number(process.env.THREADVAULT_PORT || 3187);
 export const DATA_DIR = process.env.THREADVAULT_DATA_DIR || path.join(APP_ROOT, "data");
 export const DB_PATH = path.join(DATA_DIR, "threadvault.sqlite");
 export const EXPORT_DIR = path.join(DATA_DIR, "exports");
+export const MEMORY_DIR = process.env.THREADVAULT_MEMORY_DIR || path.join(DATA_DIR, "memory");
 export const PUBLIC_DIR = path.join(APP_ROOT, "public");
 export const APPDATA = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
 export const VSCODE_GLOBAL_STORAGE = path.join(APPDATA, "Code", "User", "globalStorage");
