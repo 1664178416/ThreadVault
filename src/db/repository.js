@@ -498,10 +498,19 @@ export function updateSessionAnnotation(sessionId, updates = {}) {
   }
 
   const current = getAnnotationForSession(db, sessionId);
+  const nextFavorite = updates.favorite ?? current.favorite;
+  const nextArchived = updates.archived ?? current.archived;
+
+  if (nextFavorite && updates.archived === true) {
+    const error = new Error("Favorites are protected. Unfavorite before archiving.");
+    error.code = "PROTECTED_FAVORITE";
+    throw error;
+  }
+
   const next = {
     sessionId,
-    favorite: updates.favorite ?? current.favorite,
-    archived: updates.archived ?? current.archived,
+    favorite: nextFavorite,
+    archived: nextFavorite ? false : nextArchived,
     tags: updates.tags ? normalizeTags(updates.tags) : current.tags,
     noteText: typeof updates.noteText === "string" ? updates.noteText.trim() : current.noteText,
     updatedAt: nowIso()

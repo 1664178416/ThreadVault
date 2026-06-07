@@ -3,6 +3,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const childProcess = require("node:child_process");
 const http = require("node:http");
+const crypto = require("node:crypto");
 const extensionPackage = require("./package.json");
 
 const PORT = Number(process.env.THREADVAULT_PORT || 3187);
@@ -10,7 +11,6 @@ const RUNTIME_APP_DIRNAME = "runtime-app";
 
 let serverProcess = null;
 let outputChannel = null;
-let activePanel = null;
 
 class ActionItem extends vscode.TreeItem {
   constructor(label, command, description) {
@@ -232,11 +232,11 @@ async function ensureServer(context) {
   return false;
 }
 
-function buildPanelHtml() {
+function buildPanelHtml(hostToken) {
   const url = `http://127.0.0.1:${PORT}`;
   const urlOrigin = new URL(url).origin;
   const cacheBust = Date.now();
-  const embedUrl = `${url}/?embed=1&v=${cacheBust}`;
+  const embedUrl = `${url}/?embed=1&host=vscode&hostToken=${hostToken}&v=${cacheBust}`;
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -258,14 +258,38 @@ function buildPanelHtml() {
       const vscode = acquireVsCodeApi();
       const frame = document.getElementById("threadvault-frame");
       const allowedOrigin = ${JSON.stringify(urlOrigin)};
+      const hostToken = ${JSON.stringify(hostToken)};
+      const postHostReady = () => {
+        frame.contentWindow?.postMessage({
+          source: "threadvault-host",
+          type: "threadvault-host-ready",
+          hostToken
+        }, allowedOrigin);
+      };
+
+      frame.addEventListener("load", postHostReady);
 
       window.addEventListener("message", (event) => {
-        if (event.source === frame.contentWindow && event.data?.source === "threadvault-app") {
+        if (
+          event.source === frame.contentWindow &&
+          event.origin === allowedOrigin &&
+          event.data?.source === "threadvault-app" &&
+          event.data?.hostToken === hostToken
+        ) {
+          if (event.data?.type === "threadvault-app-ready") {
+            postHostReady();
+            return;
+          }
+
           vscode.postMessage(event.data);
           return;
         }
 
-        if (event.data?.source === "threadvault-host") {
+        if (
+          event.source !== frame.contentWindow &&
+          event.data?.source === "threadvault-host" &&
+          event.data?.hostToken === hostToken
+        ) {
           frame.contentWindow?.postMessage(event.data, allowedOrigin);
         }
       });
@@ -274,10 +298,34 @@ function buildPanelHtml() {
 </html>`;
 }
 
-function postPanelMessage(payload) {
+function browserDashboardUrl(candidateUrl) {
+  const baseUrl = new URL(`http://127.0.0.1:${PORT}`);
+  if (!candidateUrl) {
+    return baseUrl.toString();
+  }
+
+  try {
+    const parsedUrl = new URL(String(candidateUrl), baseUrl);
+    const allowedPath = parsedUrl.pathname === "/" || parsedUrl.pathname === "/index.html";
+    if (parsedUrl.origin !== baseUrl.origin || !allowedPath) {
+      return baseUrl.toString();
+    }
+
+    parsedUrl.searchParams.delete("embed");
+    parsedUrl.searchParams.delete("host");
+    parsedUrl.searchParams.delete("hostToken");
+    parsedUrl.searchParams.delete("v");
+    return parsedUrl.toString();
+  } catch {
+    return baseUrl.toString();
+  }
+}
+
+function postPanelMessage(panel, hostToken, payload) {
   logLine(`Sending host response: ${payload.requestId || "no-request-id"}`);
-  activePanel?.webview.postMessage({
+  panel.webview.postMessage({
     source: "threadvault-host",
+    hostToken,
     ...payload
   });
 }
@@ -368,8 +416,8 @@ function activate(context) {
           enableScripts: true
         }
       );
-      activePanel = panel;
-      panel.webview.html = buildPanelHtml();
+      const hostToken = crypto.randomBytes(16).toString("hex");
+      panel.webview.html = buildPanelHtml(hostToken);
       panel.webview.onDidReceiveMessage(async (message) => {
         if (!message || message.source !== "threadvault-app") {
           return;
@@ -378,8 +426,8 @@ function activate(context) {
         logLine(`Received webview action: ${message.type || "unknown"}`);
 
         if (message.type === "threadvault-open-browser") {
-          await vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${PORT}`));
-          postPanelMessage({
+          await vscode.env.openExternal(vscode.Uri.parse(browserDashboardUrl(message.payload?.url)));
+          postPanelMessage(panel, hostToken, {
             requestId: message.requestId,
             ok: true,
             message: "Opened ThreadVault in your browser."
@@ -393,21 +441,16 @@ function activate(context) {
 
         try {
           const result = await openPathInVsCode(message.payload?.path, message.payload?.target);
-          postPanelMessage({
+          postPanelMessage(panel, hostToken, {
             requestId: message.requestId,
             ...result
           });
         } catch (error) {
-          postPanelMessage({
+          postPanelMessage(panel, hostToken, {
             requestId: message.requestId,
             ok: false,
             error: error.message || String(error)
           });
-        }
-      });
-      panel.onDidDispose(() => {
-        if (activePanel === panel) {
-          activePanel = null;
         }
       });
     })

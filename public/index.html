@@ -10,30 +10,90 @@
     <div class="layout">
       <aside class="sidebar-rail">
         <section class="rail-brand">
-          <div class="icon-slot brand-slot" data-icon-hint="SVG: vault door or archive box mark" title="SVG: vault door or archive box mark" aria-hidden="true"></div>
-          <span class="rail-brand-label">Vault</span>
+          <span class="brand-icon brand-slot" data-icon="brand" aria-hidden="true"></span>
+          <span class="rail-brand-label" data-i18n="railBrand">Vault</span>
         </section>
 
         <nav class="rail-nav" aria-label="ThreadVault navigation">
           <button class="rail-button is-primary" type="button" data-scroll-target="sidebar-overview">
-            <span class="mini-icon-slot" data-icon-hint="SVG: dashboard grid" title="SVG: dashboard grid" aria-hidden="true"></span>
-            <span class="rail-label">Overview</span>
+            <span class="nav-icon" data-icon="overview" aria-hidden="true"></span>
+            <span class="rail-label" data-i18n="overview">Overview</span>
           </button>
           <button class="rail-button" type="button" data-scroll-target="sidebar-sessions">
-            <span class="mini-icon-slot" data-icon-hint="SVG: stacked chat threads" title="SVG: stacked chat threads" aria-hidden="true"></span>
-            <span class="rail-label">Sessions</span>
+            <span class="nav-icon" data-icon="sessions" aria-hidden="true"></span>
+            <span class="rail-label" data-i18n="sessions">Sessions</span>
           </button>
         </nav>
+
+        <div class="rail-spacer"></div>
+
+        <button
+          id="settings-button"
+          class="rail-button rail-settings-button"
+          type="button"
+          aria-label="Settings"
+          aria-expanded="false"
+          aria-controls="settings-panel"
+          data-i18n-aria-label="settings"
+        >
+          <span class="nav-icon" data-icon="settings" aria-hidden="true"></span>
+          <span class="rail-label" data-i18n="settings">Settings</span>
+        </button>
       </aside>
+
+      <section id="settings-panel" class="settings-panel" hidden aria-label="Settings" data-i18n-aria-label="settings">
+        <div class="settings-header">
+          <div>
+            <p class="settings-kicker" data-i18n="settingsKicker">Interface</p>
+            <h2 data-i18n="settings">Settings</h2>
+          </div>
+          <button id="settings-close" class="toast-close settings-close" type="button" aria-label="Close settings" data-i18n-aria-label="closeSettings">
+            <span class="button-icon" data-icon="close" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-label-row">
+            <span class="mini-icon" data-icon="theme" aria-hidden="true"></span>
+            <span data-i18n="theme">Theme</span>
+          </div>
+          <div class="segmented-control" role="group" aria-label="Theme" data-i18n-aria-label="theme">
+            <button type="button" data-setting="theme" data-setting-value="light" data-i18n="themeLight">Light</button>
+            <button type="button" data-setting="theme" data-setting-value="dim" data-i18n="themeDim">Dim</button>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-label-row">
+            <span class="mini-icon" data-icon="density" aria-hidden="true"></span>
+            <span data-i18n="density">Density</span>
+          </div>
+          <div class="segmented-control" role="group" aria-label="Density" data-i18n-aria-label="density">
+            <button type="button" data-setting="density" data-setting-value="comfort" data-i18n="densityComfort">Comfort</button>
+            <button type="button" data-setting="density" data-setting-value="compact" data-i18n="densityCompact">Compact</button>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-label-row">
+            <span class="mini-icon" data-icon="language" aria-hidden="true"></span>
+            <span data-i18n="language">Language</span>
+          </div>
+          <div class="segmented-control" role="group" aria-label="Language" data-i18n-aria-label="language">
+            <button type="button" data-setting="language" data-setting-value="en">EN</button>
+            <button type="button" data-setting="language" data-setting-value="zh">ZH</button>
+          </div>
+        </div>
+      </section>
 
       <aside class="sidebar-drawer">
         <section class="brand-shell">
           <div class="brand-row">
             <div class="brand-mark">
-              <div class="icon-slot brand-slot" data-icon-hint="SVG: vault door or archive box mark" title="SVG: vault door or archive box mark" aria-hidden="true"></div>
+              <span class="brand-icon brand-slot" data-icon="brand" aria-hidden="true"></span>
             </div>
             <div class="brand-copy">
-              <p class="eyebrow">Local AI Archive</p>
+              <p class="eyebrow" data-i18n="brandEyebrow">Local AI Archive</p>
               <h1>ThreadVault</h1>
             </div>
           </div>
@@ -42,38 +102,36 @@
         <section id="sidebar-overview" class="drawer-section drawer-anchor-section">
           <section class="panel panel-overview">
             <div class="panel-heading panel-heading-compact">
-              <p class="panel-title">Overview</p>
-              <button id="scan-button" class="primary-button overview-scan-button">Rescan</button>
+              <p class="panel-title" data-i18n="overview">Overview</p>
+              <button id="scan-button" class="primary-button overview-scan-button" type="button">
+                <span class="button-icon" data-icon="scan" aria-hidden="true"></span>
+                <span class="button-label" data-i18n="rescan">Rescan</span>
+              </button>
             </div>
             <div class="overview-command-row">
               <div class="overview-copy">
-                <p class="overview-kicker">Library snapshot</p>
-                <p id="overview-summary" class="overview-summary">Waiting for local sessions to load.</p>
+                <p class="overview-kicker" data-i18n="librarySnapshot">Library snapshot</p>
+                <p id="overview-summary" class="overview-summary" data-i18n="waitingForSessions">Waiting for local sessions to load.</p>
               </div>
+              <div id="overview-metrics" class="overview-metrics"></div>
             </div>
             <div class="overview-focus-row">
-              <span class="scope-title">Current focus</span>
-              <span id="overview-focus" class="overview-focus">All sources</span>
+              <span class="scope-title" data-i18n="currentFocus">Current focus</span>
+              <span id="overview-focus" class="overview-focus" data-i18n="allSources">All sources</span>
             </div>
             <div class="scope-block scope-block-first">
               <div class="scope-header">
-                <span class="scope-title">Sources</span>
+                <span class="scope-title" data-i18n="sources">Sources</span>
               </div>
               <div id="stats" class="source-grid"></div>
             </div>
             <div class="scope-block">
               <div class="scope-header">
-                <span class="scope-title">Filters</span>
+                <span class="scope-title" data-i18n="filters">Filters</span>
               </div>
-              <div class="toggle-row">
-                <label class="toggle">
-                  <input id="favorites-only" type="checkbox" />
-                  <span>Favorites only</span>
-                </label>
-                <label class="toggle">
-                  <input id="include-archived" type="checkbox" />
-                  <span>Include archived</span>
-                </label>
+              <div class="filter-state-inputs" hidden>
+                <input id="favorites-only" type="checkbox" />
+                <input id="include-archived" type="checkbox" />
               </div>
               <div id="status-strip" class="status-strip"></div>
             </div>
@@ -84,17 +142,22 @@
           <section class="panel panel-sessions">
             <div class="list-header">
               <div>
-                <span>Sessions</span>
-                <p id="list-state" class="list-state">All sources</p>
+                <span data-i18n="sessions">Sessions</span>
+                <p id="list-state" class="list-state" data-i18n="allSources">All sources</p>
               </div>
               <span id="session-count">0</span>
             </div>
-            <input
-              id="search-input"
-              class="search-input session-search"
-              type="search"
-              placeholder="Search sessions"
-            />
+            <label class="search-shell session-search">
+              <span class="search-icon" data-icon="search" aria-hidden="true"></span>
+              <input
+                id="search-input"
+                class="search-input"
+                type="search"
+                placeholder="Search sessions"
+                data-i18n-placeholder="searchSessions"
+              />
+            </label>
+            <div id="session-status-strip" class="status-strip session-status-strip" role="group" aria-label="Quick filters" data-i18n-aria-label="quickFilters"></div>
             <div id="session-list" class="session-list"></div>
           </section>
         </section>
@@ -105,25 +168,33 @@
         class="drawer-resizer"
         type="button"
         aria-label="Resize session library"
+        data-i18n-aria-label="drawerResize"
         title="Drag to resize the session library"
+        data-i18n-title="drawerResizeTitle"
       ></button>
 
-      <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" hidden aria-label="Close session library"></button>
+      <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" hidden aria-label="Close session library" data-i18n-aria-label="sidebarClose"></button>
 
       <main class="content">
         <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
         <div class="topbar">
           <div class="topbar-left">
-            <button id="sidebar-toggle" class="secondary-button embed-toggle" type="button">Library</button>
-            <div id="topbar-active-state" class="topbar-active-state">All sources</div>
+            <button id="sidebar-toggle" class="secondary-button embed-toggle" type="button">
+              <span class="button-icon" data-icon="sessions" aria-hidden="true"></span>
+              <span class="button-label" data-i18n="library">Library</span>
+            </button>
+            <div id="topbar-active-state" class="topbar-active-state" data-i18n="allSources">All sources</div>
           </div>
           <div class="topbar-right">
-            <button id="open-browser-button" class="ghost-button topbar-browser-button" type="button">Open in browser</button>
+            <button id="open-browser-button" class="ghost-button topbar-browser-button" type="button">
+              <span class="button-icon" data-icon="browser" aria-hidden="true"></span>
+              <span class="button-label" data-i18n="openInBrowser">Open in browser</span>
+            </button>
           </div>
         </div>
         <section id="session-detail" class="detail empty-state">
-          <h2>Select a session</h2>
-          <p class="muted">Your local archive is ready.</p>
+          <h2 data-i18n="selectSession">Select a session</h2>
+          <p class="muted" data-i18n="archiveReady">Your local archive is ready.</p>
         </section>
       </main>
     </div>

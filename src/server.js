@@ -38,7 +38,8 @@ function sendFile(response, filePath, contentType) {
   });
 
   response.writeHead(200, {
-    "Content-Type": contentType
+    "Content-Type": contentType,
+    "Cache-Control": "no-store"
   });
   stream.pipe(response);
 }
@@ -185,24 +186,32 @@ function handleApi(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/api/session-meta") {
     readBody(request, response, (payload) => {
-      const annotation = saveSessionAnnotation(payload.sessionId, {
-        favorite: payload.favorite,
-        archived: payload.archived,
-        tags: payload.tags,
-        noteText: payload.noteText
-      });
-      if (!annotation) {
-        sendJson(response, 404, {
-          ok: false,
-          error: "Session not found."
+      try {
+        const annotation = saveSessionAnnotation(payload.sessionId, {
+          favorite: payload.favorite,
+          archived: payload.archived,
+          tags: payload.tags,
+          noteText: payload.noteText
         });
-        return;
-      }
+        if (!annotation) {
+          sendJson(response, 404, {
+            ok: false,
+            error: "Session not found."
+          });
+          return;
+        }
 
-      sendJson(response, 200, {
-        ok: true,
-        annotation
-      });
+        sendJson(response, 200, {
+          ok: true,
+          annotation
+        });
+      } catch (error) {
+        const isProtectedFavorite = error?.code === "PROTECTED_FAVORITE";
+        sendJson(response, isProtectedFavorite ? 409 : 400, {
+          ok: false,
+          error: String(error.message || error)
+        });
+      }
     });
     return;
   }
