@@ -14,9 +14,9 @@ const I18N = {
   en: {
     all: "All",
     allSources: "All sources",
-    archiveAction: "Archive",
+    archiveAction: "Hide",
     archiveReady: "Your local archive is ready.",
-    archived: "Archived",
+    archived: "Hidden",
     assistantRole: "Assistant",
     brandEyebrow: "Local AI Archive",
     closeSettings: "Close settings",
@@ -34,6 +34,7 @@ const I18N = {
     exporting: "Exporting",
     exportFailed: "Export failed.",
     favoriteAction: "Favorite",
+    favoritedAction: "Favorited",
     favorites: "Favorites",
     filters: "Filters",
     language: "Language",
@@ -55,9 +56,9 @@ const I18N = {
     openSourceFailed: "Unable to open source file.",
     openWorkspaceFailed: "Unable to open workspace.",
     processRole: "Process",
-    protectedFavorite: "Favorites are protected. Unfavorite before archiving.",
-    protectedFavoriteTitle: "Protected favorite. Unfavorite before archiving.",
-    archiveConfirm: "Archive this session? It will be hidden from the default list, not deleted.",
+    protectedFavorite: "Favorited sessions stay visible. Unfavorite before hiding.",
+    protectedFavoriteTitle: "Favorited sessions cannot be hidden.",
+    archiveConfirm: "Hide this session? It will be removed from the default list, not deleted.",
     noSessionSelected: "No session is selected.",
     noSessionsMatched: "Nothing matched the current view.",
     noSessions: "No sessions",
@@ -106,7 +107,7 @@ const I18N = {
     updated: "Updated",
     userRole: "User",
     waitingForSessions: "Waiting for local sessions to load.",
-    withArchived: "With archived",
+    withArchived: "Include hidden",
     workspace: "Workspace",
     workspaceMissing: "Workspace path is missing.",
     workspaceOpenRequested: "Workspace open request sent."
@@ -114,9 +115,9 @@ const I18N = {
   zh: {
     all: "\u5168\u90e8",
     allSources: "\u5168\u90e8\u6765\u6e90",
-    archiveAction: "\u5f52\u6863",
+    archiveAction: "\u9690\u85cf",
     archiveReady: "\u672c\u5730\u4f1a\u8bdd\u5f52\u6863\u5df2\u5c31\u7eea\u3002",
-    archived: "\u5df2\u5f52\u6863",
+    archived: "\u5df2\u9690\u85cf",
     assistantRole: "\u52a9\u624b",
     brandEyebrow: "\u672c\u5730 AI \u5f52\u6863",
     closeSettings: "\u5173\u95ed\u8bbe\u7f6e",
@@ -134,6 +135,7 @@ const I18N = {
     exporting: "\u5bfc\u51fa\u4e2d",
     exportFailed: "\u5bfc\u51fa\u5931\u8d25\u3002",
     favoriteAction: "\u6536\u85cf",
+    favoritedAction: "\u5df2\u6536\u85cf",
     favorites: "\u6536\u85cf",
     filters: "\u8fc7\u6ee4",
     language: "\u8bed\u8a00",
@@ -155,9 +157,9 @@ const I18N = {
     openSourceFailed: "\u65e0\u6cd5\u6253\u5f00\u6e90\u6587\u4ef6\u3002",
     openWorkspaceFailed: "\u65e0\u6cd5\u6253\u5f00\u5de5\u4f5c\u533a\u3002",
     processRole: "\u8fc7\u7a0b",
-    protectedFavorite: "\u5df2\u6536\u85cf\u7684\u4f1a\u8bdd\u53d7\u4fdd\u62a4\uff0c\u8bf7\u5148\u53d6\u6d88\u6536\u85cf\u518d\u5f52\u6863\u3002",
-    protectedFavoriteTitle: "\u53d7\u4fdd\u62a4\u7684\u6536\u85cf\u4f1a\u8bdd\uff0c\u8bf7\u5148\u53d6\u6d88\u6536\u85cf\u518d\u5f52\u6863\u3002",
-    archiveConfirm: "\u5f52\u6863\u8fd9\u4e2a\u4f1a\u8bdd\uff1f\u5b83\u4f1a\u4ece\u9ed8\u8ba4\u5217\u8868\u9690\u85cf\uff0c\u4f46\u4e0d\u4f1a\u88ab\u5220\u9664\u3002",
+    protectedFavorite: "\u5df2\u6536\u85cf\u7684\u4f1a\u8bdd\u4f1a\u4fdd\u6301\u53ef\u89c1\uff0c\u8bf7\u5148\u53d6\u6d88\u6536\u85cf\u518d\u9690\u85cf\u3002",
+    protectedFavoriteTitle: "\u5df2\u6536\u85cf\u7684\u4f1a\u8bdd\u4e0d\u80fd\u9690\u85cf\u3002",
+    archiveConfirm: "\u9690\u85cf\u8fd9\u4e2a\u4f1a\u8bdd\uff1f\u5b83\u4f1a\u4ece\u9ed8\u8ba4\u5217\u8868\u79fb\u51fa\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u3002",
     noSessionSelected: "\u672a\u9009\u62e9\u4f1a\u8bdd\u3002",
     noSessionsMatched: "\u5f53\u524d\u89c6\u56fe\u6ca1\u6709\u5339\u914d\u7ed3\u679c\u3002",
     noSessions: "\u6ca1\u6709\u4f1a\u8bdd",
@@ -206,7 +208,7 @@ const I18N = {
     updated: "\u66f4\u65b0",
     userRole: "\u7528\u6237",
     waitingForSessions: "\u6b63\u5728\u7b49\u5f85\u672c\u5730\u4f1a\u8bdd\u52a0\u8f7d\u3002",
-    withArchived: "\u5305\u542b\u5f52\u6863",
+    withArchived: "\u5305\u542b\u9690\u85cf",
     workspace: "\u5de5\u4f5c\u533a",
     workspaceMissing: "\u7f3a\u5c11\u5de5\u4f5c\u533a\u8def\u5f84\u3002",
     workspaceOpenRequested: "\u5de5\u4f5c\u533a\u6253\u5f00\u8bf7\u6c42\u5df2\u53d1\u9001\u3002"
@@ -1338,7 +1340,7 @@ function filterPanelHtml(stats) {
           aria-pressed="${state.includeArchived ? "true" : "false"}"
         >
           ${iconSlot("archive")}
-          <span class="filter-pill-label">${escapeHtml(t("archived"))}</span>
+          <span class="filter-pill-label">${escapeHtml(t("withArchived"))}</span>
           <span class="filter-pill-value">${stats.archivedCount || 0}</span>
         </button>
       </div>
@@ -1563,7 +1565,8 @@ function renderSessionDetail(session) {
   const isFavorite = Boolean(session.annotation?.favorite);
   const isArchived = Boolean(session.annotation?.archived);
   const archiveProtected = isFavorite && !isArchived;
-  const favoriteLabel = isFavorite ? t("unfavoriteAction") : t("favoriteAction");
+  const favoriteLabel = isFavorite ? t("favoritedAction") : t("favoriteAction");
+  const favoriteTitle = isFavorite ? t("unfavoriteAction") : t("favoriteAction");
   const archiveLabel = isArchived ? t("restoreAction") : t("archiveAction");
   const archiveIcon = isArchived ? "restore" : "archive";
   const archiveTitle = archiveProtected ? t("protectedFavoriteTitle") : archiveLabel;
@@ -1629,11 +1632,11 @@ function renderSessionDetail(session) {
             ${iconSlot("workspace")}
             <span>${escapeHtml(t("workspace"))}</span>
           </button>
-          <button class="ghost-button action-button ${isFavorite ? "is-favorite" : ""}" type="button" data-action="favorite-toggle" title="${escapeHtml(favoriteLabel)}">
+          <button class="ghost-button action-button ${isFavorite ? "is-favorite" : ""}" type="button" data-action="favorite-toggle" title="${escapeHtml(favoriteTitle)}">
             ${iconSlot(isFavorite ? "favoriteFilled" : "favorite")}
             <span>${escapeHtml(favoriteLabel)}</span>
           </button>
-          <button class="ghost-button action-button ${archiveProtected ? "is-protected" : ""}" type="button" data-action="archive-toggle" title="${escapeHtml(archiveTitle)}" data-protected="${archiveProtected ? "true" : "false"}">
+          <button class="ghost-button action-button ${archiveProtected ? "is-protected" : ""}" type="button" data-action="archive-toggle" ${archiveProtected ? "disabled" : ""} title="${escapeHtml(archiveTitle)}" data-protected="${archiveProtected ? "true" : "false"}">
             ${iconSlot(archiveIcon)}
             <span>${escapeHtml(archiveLabel)}</span>
           </button>
