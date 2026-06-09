@@ -68,7 +68,7 @@ function createSchema(db) {
     );
 
     UPDATE session_annotations
-    SET archived = 0
+    SET favorite = 0
     WHERE favorite = 1 AND archived = 1;
   `);
 }

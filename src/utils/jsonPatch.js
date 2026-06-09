@@ -2,6 +2,8 @@ function cloneValue(value) {
   return structuredClone(value);
 }
 
+const MAX_PARSE_ERROR_SAMPLES = 20;
+
 function ensurePath(root, pathParts) {
   let current = root;
   for (let index = 0; index < pathParts.length - 1; index += 1) {
@@ -17,13 +19,28 @@ function ensurePath(root, pathParts) {
 
 export function applyJsonLineOperations(lines) {
   let state = null;
+  const errorSamples = [];
+  let errorTotal = 0;
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     if (!line.trim()) {
       continue;
     }
 
-    const entry = JSON.parse(line);
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch (error) {
+      if (errorSamples.length < MAX_PARSE_ERROR_SAMPLES) {
+        errorSamples.push({
+          line: index + 1,
+          error: String(error.message || error)
+        });
+      }
+      errorTotal += 1;
+      continue;
+    }
+
     if (entry.kind === 0) {
       state = cloneValue(entry.v);
       continue;
@@ -48,6 +65,16 @@ export function applyJsonLineOperations(lines) {
       const values = Array.isArray(entry.v) ? entry.v : [entry.v];
       target[finalKey].push(...cloneValue(values));
     }
+  }
+
+  if (state && typeof state === "object") {
+    Object.defineProperty(state, "parseErrors", {
+      enumerable: false,
+      value: {
+        total: errorTotal,
+        samples: errorSamples
+      }
+    });
   }
 
   return state;

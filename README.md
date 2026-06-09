@@ -1,6 +1,6 @@
 # ThreadVault
 
-ThreadVault is a local-first archive for AI coding conversations. It scans your local GitHub Copilot Chat, Codex, and Claude Code history, stores it in SQLite, and gives you a clean searchable UI for reviewing, tagging, favoriting, archiving, reopening, and exporting sessions.
+ThreadVault is a local-first archive for AI coding conversations. It scans your local GitHub Copilot Chat, Codex, and Claude Code history, stores it in SQLite, and gives you a clean searchable UI for reviewing, tagging, favoriting, hiding, reopening, and exporting sessions.
 
 Everything runs on your machine. No cloud account, sync service, or hosted backend is required.
 
@@ -10,7 +10,7 @@ Everything runs on your machine. No cloud account, sync service, or hosted backe
 - Browse sessions from Copilot Chat, Codex, and Claude Code in one place
 - Open the original transcript file in VS Code
 - Open the related workspace folder when ThreadVault can detect it
-- Add local tags, notes, favorites, and archived state
+- Add local tags, notes, favorites, and hidden state
 - Export any session to Markdown
 - Save selected sessions as long-term Markdown memory
 - Use the browser UI directly or open the embedded VS Code panel
@@ -32,7 +32,7 @@ npm start
 Open:
 
 ```text
-http://localhost:3187
+http://127.0.0.1:3187
 ```
 
 ThreadVault scans on startup. To scan manually from the command line:
@@ -44,11 +44,11 @@ npm run scan
 ## First Use
 
 1. Start ThreadVault with `npm start`.
-2. Open `http://localhost:3187`.
+2. Open `http://127.0.0.1:3187`.
 3. Check the source counters for Copilot, Codex, and Claude.
 4. Use search to find an old prompt, error message, file name, or project name.
 5. Select a session to read the transcript.
-6. Use `Favorite`, `Archive`, `Notes`, `Export`, or `Memory` as needed.
+6. Use `Favorite`, `Hide`, `Notes`, `Export`, or `Memory` as needed.
 
 If no sessions appear, make sure you have used at least one supported tool locally and that its history files exist on disk.
 
@@ -68,7 +68,7 @@ Claude subagent logs are skipped for now so the archive stays focused on main us
 
 The dashboard has three main areas:
 
-- `Overview`: source counts, message count, favorites, archived sessions, and rescan
+- `Overview`: source counts, message count, favorites, hidden sessions, and rescan
 - `Sessions`: searchable session list with source, workspace, time, summary, and tags
 - `Transcript`: selected conversation, local annotations, source/workspace actions, Markdown export, memory save, and expandable process details
 
@@ -98,7 +98,7 @@ $env:THREADVAULT_MEMORY_DIR="D:\Notes\ThreadVault"; npm start
 
 ## VS Code Extension
 
-The repository includes a minimal VS Code extension shell.
+The repository includes a VS Code extension for starting the local service and opening the embedded dashboard.
 
 For local development:
 
@@ -116,29 +116,41 @@ Useful commands:
 - `ThreadVault: Rescan Local History`
 - `ThreadVault: Open Logs`
 
+Useful settings:
+
+- `threadvault.port`: local HTTP port, default `3187`
+- `threadvault.host`: local bind host, default `127.0.0.1`; enter a host/IP only, not a URL
+- `threadvault.clientHost`: host name the extension opens/calls, default `127.0.0.1`; enter a host/IP only, not a URL
+- `threadvault.nodePath`: optional path to a Node.js 24+ executable when `node` is not on `PATH`
+- `threadvault.dataDirectory`: optional custom data directory
+- `threadvault.memoryDirectory`: optional custom Markdown memory directory
+
+For IPv6 localhost, use `::1` or `[::1]` in host settings and keep the port in `threadvault.port`.
+
 In development mode, the extension reads the app from the repository root, so you do not need to package anything for normal iteration.
 
 ## Packaging The Extension
 
-Prepare the app bundle:
+Prepare and verify the app bundle:
 
 ```bash
 npm run prepare:extension
+npm run verify
 ```
 
 Package from the `extension` folder:
 
 ```bash
-npx @vscode/vsce package
+npm run package:vsix
 ```
 
 Install the generated VSIX:
 
 ```bash
-code --install-extension threadvault-vscode-0.1.0.vsix
+code --install-extension threadvault-vscode-*.vsix
 ```
 
-Before publishing publicly, update the extension metadata in `extension/package.json`, especially `publisher`, `repository`, `homepage`, `bugs`, and `version`.
+Before publishing publicly, update the extension metadata in `extension/package.json`, especially `publisher`, `repository`, `homepage`, `bugs`, and `version`. Keep the Marketplace icon at `extension/media/threadvault.png`.
 
 ## Data And Privacy
 
@@ -160,7 +172,10 @@ Saved memory notes are written to:
 data/memory/
 ```
 
-These files may contain private prompts, code, paths, notes, and transcripts. They are ignored by `.gitignore` and should not be committed.
+These files may contain private prompts, code, paths, notes, and transcripts. The local `data/` directory is ignored by `.gitignore` and should not be committed.
+
+The local HTTP API is intended for ThreadVault itself, VS Code, and browser pages opened from `localhost` or `127.0.0.1`. Do not expose the port to a public network.
+By default the server binds to `127.0.0.1`. Set `THREADVAULT_HOST` only if you understand the privacy implications.
 
 Before pushing to GitHub, double-check:
 
@@ -168,7 +183,7 @@ Before pushing to GitHub, double-check:
 git status --short
 ```
 
-Make sure `data/`, local exports, and packaged `.vsix` files are not staged.
+Make sure `data/` and packaged `.vsix` files are not staged.
 
 ## Useful Commands
 
@@ -181,6 +196,9 @@ npm run dev
 
 # Scan local history and print the result
 npm run scan
+
+# Check syntax, extension manifest, and bundled app sync
+npm run verify
 
 # Copy src/ and public/ into extension/app for packaging
 npm run prepare:extension
@@ -196,10 +214,10 @@ ThreadVault/
 |   |-- db/              # SQLite schema and queries
 |   |-- services/        # Scan, export, open actions
 |   `-- server.js        # Local HTTP server
-|-- extension/           # VS Code extension shell
+|-- extension/           # VS Code extension
 |-- scripts/             # Packaging helpers
 |-- docs/                # Design notes
-`-- data/                # Local SQLite DB and exports, ignored by git
+`-- data/                # Local SQLite DB, exports, and memory notes, ignored by git
 ```
 
 ## Current Limitations

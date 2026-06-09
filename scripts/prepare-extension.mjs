@@ -38,4 +38,17 @@ fs.writeFileSync(
   "utf8"
 );
 
+fs.writeFileSync(
+  path.join(targetRoot, "package.json"),
+  JSON.stringify(
+    {
+      private: true,
+      type: "module"
+    },
+    null,
+    2
+  ) + "\n",
+  "utf8"
+);
+
 console.log(`Prepared extension runtime app at ${targetRoot}`);

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { COPILOT_EMPTY_WINDOW_DIR } from "../config.js";
-import { listFiles, readJsonFile } from "../utils/fs.js";
+import { listFiles, parseErrorSummary, readJsonFile, sortByModifiedDesc } from "../utils/fs.js";
 import { applyJsonLineOperations } from "../utils/jsonPatch.js";
 import { displayText, deriveTitle, hasInternalContext, hashText, snippet } from "../utils/text.js";
 import { toIsoFromEpoch } from "../utils/time.js";
@@ -157,7 +157,8 @@ function normalizeSession(rawSession, filePath) {
       rawVersion: rawSession.version || null,
       initialLocation: rawSession.initialLocation || null,
       selectedModel: rawSession.selectedModel?.identifier || null,
-      mode: rawSession.mode?.id || null
+      mode: rawSession.mode?.id || null,
+      parseErrors: parseErrorSummary(rawSession.parseErrors)
     },
     messages
   };
@@ -192,11 +193,11 @@ export function scanCopilotSessions() {
   }
 
   const files = listFiles(COPILOT_EMPTY_WINDOW_DIR)
-    .filter((filePath) => filePath.endsWith(".json") || filePath.endsWith(".jsonl"))
-    .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+    .filter((filePath) => filePath.endsWith(".json") || filePath.endsWith(".jsonl"));
+  const sortedFiles = sortByModifiedDesc(files);
 
   const sessions = [];
-  for (const filePath of files) {
+  for (const filePath of sortedFiles) {
     try {
       const rawSession = parseSessionFile(filePath);
       if (!rawSession || !Array.isArray(rawSession.requests)) {

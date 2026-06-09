@@ -1,16 +1,44 @@
 import path from "node:path";
+import fs from "node:fs";
 
 import { EXPORT_DIR, MEMORY_DIR } from "../config.js";
 import { getSessionDetail } from "../db/repository.js";
 import { ensureDir, writeText } from "../utils/fs.js";
 
+const WINDOWS_RESERVED_NAMES = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  "com1",
+  "com2",
+  "com3",
+  "com4",
+  "com5",
+  "com6",
+  "com7",
+  "com8",
+  "com9",
+  "lpt1",
+  "lpt2",
+  "lpt3",
+  "lpt4",
+  "lpt5",
+  "lpt6",
+  "lpt7",
+  "lpt8",
+  "lpt9"
+]);
+
 function slugify(value, fallback = "session") {
-  return String(value || fallback)
+  const slug = String(value || fallback)
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80) || fallback;
+
+  return WINDOWS_RESERVED_NAMES.has(slug) ? `${slug}-item` : slug;
 }
 
 function dateBucket(session) {
@@ -24,6 +52,53 @@ function dateBucket(session) {
 
 function sessionFileName(session) {
   return `${slugify(session.title)}-${slugify(session.sourceSessionId || session.id, "thread")}.md`;
+}
+
+function oneLine(value, fallback = "Unknown") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text || fallback;
+}
+
+function markdownInline(value, fallback = "Unknown") {
+  return oneLine(value, fallback)
+    .replaceAll("\\", "\\\\")
+    .replaceAll("`", "\\`")
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
+}
+
+function markdownHeading(value, fallback = "Untitled Session") {
+  return markdownInline(value, fallback).replace(/^#+\s*/, "");
+}
+
+function markdownListValue(value, fallback = "Unknown") {
+  return markdownInline(value, fallback).replace(/^([-*+]|\d+\.)\s+/, "\\$&");
+}
+
+function ensureInsideDirectory(rootDir, targetPath) {
+  const root = path.resolve(rootDir);
+  const target = path.resolve(targetPath);
+  const relative = path.relative(root, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Refusing to write outside ${root}.`);
+  }
+  return target;
+}
+
+function uniqueMarkdownPath(directory, fileName) {
+  const safeDirectory = path.resolve(directory);
+  const parsed = path.parse(fileName);
+  const baseName = parsed.name || "session";
+  const extension = parsed.ext || ".md";
+  let candidate = ensureInsideDirectory(safeDirectory, path.join(safeDirectory, `${baseName}${extension}`));
+  let index = 2;
+
+  while (fs.existsSync(candidate)) {
+    candidate = ensureInsideDirectory(safeDirectory, path.join(safeDirectory, `${baseName}-${index}${extension}`));
+    index += 1;
+  }
+
+  return candidate;
 }
 
 function fence(content) {
@@ -41,7 +116,7 @@ function renderReferences(references) {
   return [
     "",
     "Referenced files:",
-    ...references.map((file) => `- ${file}`)
+    ...references.map((file) => `- ${markdownListValue(file)}`)
   ].join("\n");
 }
 
@@ -52,34 +127,34 @@ function renderAnnotation(annotation) {
     lines.push("- Favorite: yes");
   }
   if (annotation.archived) {
-    lines.push("- Archived: yes");
+    lines.push("- Hidden: yes");
   }
   if (annotation.tags.length) {
-    lines.push(`- Tags: ${annotation.tags.join(", ")}`);
+    lines.push(`- Tags: ${annotation.tags.map((tag) => markdownInline(tag)).join(", ")}`);
   }
   if (annotation.noteText) {
     lines.push("- Note:");
     lines.push("");
-    lines.push(annotation.noteText);
+    lines.push(fence(annotation.noteText));
   }
 
   return lines.join("\n");
 }
 
 function buildMarkdown(session) {
-  const sourcePath = session.sourcePath || "Unknown";
+  const sourcePath = markdownListValue(session.sourcePath);
   const lines = [
-    `# ${session.title}`,
+    `# ${markdownHeading(session.title)}`,
     "",
     "> Exported from ThreadVault. This file may contain private prompts, paths, notes, and transcripts.",
     "",
-    "- Source: " + session.sourceLabel,
-    "- Source session id: " + (session.sourceSessionId || "Unknown"),
+    "- Source: " + markdownListValue(session.sourceLabel),
+    "- Source session id: " + markdownListValue(session.sourceSessionId),
     "- Source path: " + sourcePath,
-    "- Workspace: " + (session.workspacePath || "Unknown"),
-    "- Created: " + (session.createdAt || "Unknown"),
-    "- Updated: " + (session.updatedAt || "Unknown"),
-    "- Status: " + (session.status || "unknown"),
+    "- Workspace: " + markdownListValue(session.workspacePath),
+    "- Created: " + markdownListValue(session.createdAt),
+    "- Updated: " + markdownListValue(session.updatedAt),
+    "- Status: " + markdownListValue(session.status, "unknown"),
     ""
   ];
 
@@ -95,11 +170,11 @@ function buildMarkdown(session) {
   lines.push("");
 
   for (const message of session.messages) {
-    lines.push(`### ${message.role}`);
+    lines.push(`### ${markdownHeading(message.role, "Message")}`);
     lines.push("");
-    lines.push(`- Timestamp: ${message.timestamp || "Unknown"}`);
+    lines.push(`- Timestamp: ${markdownListValue(message.timestamp)}`);
     if (message.model) {
-      lines.push(`- Model: ${message.model}`);
+      lines.push(`- Model: ${markdownListValue(message.model)}`);
     }
     lines.push("");
     lines.push(fence(message.content));
@@ -124,13 +199,14 @@ export function exportSessionToMarkdown(sessionId) {
 
   ensureDir(EXPORT_DIR);
   const fileName = sessionFileName(session);
-  const exportPath = path.join(EXPORT_DIR, fileName);
+  const exportPath = uniqueMarkdownPath(EXPORT_DIR, fileName);
   writeText(exportPath, buildMarkdown(session));
 
   return {
     ok: true,
     path: exportPath,
-    fileName
+    directory: path.dirname(exportPath),
+    fileName: path.basename(exportPath)
   };
 }
 
@@ -147,12 +223,14 @@ export function saveSessionToMemory(sessionId) {
   const sourceDir = slugify(session.sourceId || session.sourceLabel, "source");
   const workspaceDir = slugify(session.workspaceName || "no-workspace", "no-workspace");
   const fileName = sessionFileName(session);
-  const memoryPath = path.join(MEMORY_DIR, dateDir, sourceDir, workspaceDir, fileName);
+  const memoryDir = ensureInsideDirectory(MEMORY_DIR, path.join(MEMORY_DIR, dateDir, sourceDir, workspaceDir));
+  const memoryPath = uniqueMarkdownPath(memoryDir, fileName);
   writeText(memoryPath, buildMarkdown(session));
 
   return {
     ok: true,
     path: memoryPath,
-    fileName
+    directory: path.dirname(memoryPath),
+    fileName: path.basename(memoryPath)
   };
 }

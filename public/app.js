@@ -21,6 +21,7 @@ const I18N = {
     brandEyebrow: "Local AI Archive",
     closeSettings: "Close settings",
     copyLink: "Copy link",
+    copyLinkTitle: "Copy a local link that reopens this exact session in the browser",
     copying: "Copying",
     copyFailed: "Unable to copy link.",
     copySuccess: "Session link copied.",
@@ -29,7 +30,8 @@ const I18N = {
     drawerResize: "Resize session library",
     drawerResizeTitle: "Drag to resize the session library",
     empty: "Empty",
-    export: "Export",
+    export: "Export MD",
+    exportTitle: "Save this session as a Markdown file in the exports folder",
     exportedTo: "Exported to",
     exporting: "Exporting",
     exportFailed: "Export failed.",
@@ -45,8 +47,8 @@ const I18N = {
     memoryFailed: "Memory save failed.",
     memorySaved: "Saved to memory",
     messages: "messages",
-    saveMemory: "Memory",
-    saveMemoryTitle: "Save to memory",
+    saveMemory: "Save memory",
+    saveMemoryTitle: "Save this session as a durable Markdown memory note",
     openInBrowser: "Open in browser",
     opening: "Opening",
     overview: "Overview",
@@ -56,9 +58,7 @@ const I18N = {
     openSourceFailed: "Unable to open source file.",
     openWorkspaceFailed: "Unable to open workspace.",
     processRole: "Process",
-    protectedFavorite: "Favorited sessions stay visible. Unfavorite before hiding.",
-    protectedFavoriteTitle: "Favorited sessions cannot be hidden.",
-    archiveConfirm: "Hide this session? It will be removed from the default list, not deleted.",
+    archiveConfirm: "Hide this session? It will leave the default and Favorites views, but the source file is untouched.",
     noSessionSelected: "No session is selected.",
     noSessionsMatched: "Nothing matched the current view.",
     noSessions: "No sessions",
@@ -75,6 +75,8 @@ const I18N = {
     save: "Save",
     saved: "Saved",
     saveFailed: "Annotation save failed.",
+    scanFailed: "failed",
+    scanSourceFailed: "source errors",
     scanImported: "Imported",
     scanSkipped: "skipped",
     scanUpdated: "updated",
@@ -122,6 +124,7 @@ const I18N = {
     brandEyebrow: "\u672c\u5730 AI \u5f52\u6863",
     closeSettings: "\u5173\u95ed\u8bbe\u7f6e",
     copyLink: "\u590d\u5236\u94fe\u63a5",
+    copyLinkTitle: "\u590d\u5236\u53ef\u5728\u6d4f\u89c8\u5668\u91cc\u76f4\u8fbe\u8fd9\u6b21\u4f1a\u8bdd\u7684\u672c\u5730\u94fe\u63a5",
     copying: "\u590d\u5236\u4e2d",
     copyFailed: "\u65e0\u6cd5\u590d\u5236\u94fe\u63a5\u3002",
     copySuccess: "\u4f1a\u8bdd\u94fe\u63a5\u5df2\u590d\u5236\u3002",
@@ -130,7 +133,8 @@ const I18N = {
     drawerResize: "\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
     drawerResizeTitle: "\u62d6\u52a8\u4ee5\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
     empty: "\u7a7a",
-    export: "\u5bfc\u51fa",
+    export: "\u5bfc\u51fa MD",
+    exportTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u4fdd\u5b58\u4e3a\u5bfc\u51fa\u76ee\u5f55\u4e2d\u7684 Markdown \u6587\u4ef6",
     exportedTo: "\u5df2\u5bfc\u51fa\u5230",
     exporting: "\u5bfc\u51fa\u4e2d",
     exportFailed: "\u5bfc\u51fa\u5931\u8d25\u3002",
@@ -146,8 +150,8 @@ const I18N = {
     memoryFailed: "\u6c89\u6dc0\u5931\u8d25\u3002",
     memorySaved: "\u5df2\u6c89\u6dc0\u5230",
     messages: "\u6761\u6d88\u606f",
-    saveMemory: "\u6c89\u6dc0",
-    saveMemoryTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u6c89\u6dc0\u4e3a Markdown",
+    saveMemory: "\u6c89\u6dc0\u8bb0\u5fc6",
+    saveMemoryTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u4fdd\u5b58\u4e3a\u53ef\u957f\u671f\u590d\u7528\u7684 Markdown \u8bb0\u5fc6",
     openInBrowser: "\u5728\u6d4f\u89c8\u5668\u6253\u5f00",
     opening: "\u6253\u5f00\u4e2d",
     overview: "\u6982\u89c8",
@@ -157,9 +161,7 @@ const I18N = {
     openSourceFailed: "\u65e0\u6cd5\u6253\u5f00\u6e90\u6587\u4ef6\u3002",
     openWorkspaceFailed: "\u65e0\u6cd5\u6253\u5f00\u5de5\u4f5c\u533a\u3002",
     processRole: "\u8fc7\u7a0b",
-    protectedFavorite: "\u5df2\u6536\u85cf\u7684\u4f1a\u8bdd\u4f1a\u4fdd\u6301\u53ef\u89c1\uff0c\u8bf7\u5148\u53d6\u6d88\u6536\u85cf\u518d\u9690\u85cf\u3002",
-    protectedFavoriteTitle: "\u5df2\u6536\u85cf\u7684\u4f1a\u8bdd\u4e0d\u80fd\u9690\u85cf\u3002",
-    archiveConfirm: "\u9690\u85cf\u8fd9\u4e2a\u4f1a\u8bdd\uff1f\u5b83\u4f1a\u4ece\u9ed8\u8ba4\u5217\u8868\u79fb\u51fa\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u3002",
+    archiveConfirm: "\u9690\u85cf\u8fd9\u6b21\u4f1a\u8bdd\uff1f\u5b83\u4f1a\u4ece\u9ed8\u8ba4\u5217\u8868\u548c\u6536\u85cf\u4e2d\u79fb\u51fa\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u6e90\u6587\u4ef6\u3002",
     noSessionSelected: "\u672a\u9009\u62e9\u4f1a\u8bdd\u3002",
     noSessionsMatched: "\u5f53\u524d\u89c6\u56fe\u6ca1\u6709\u5339\u914d\u7ed3\u679c\u3002",
     noSessions: "\u6ca1\u6709\u4f1a\u8bdd",
@@ -176,6 +178,8 @@ const I18N = {
     save: "\u4fdd\u5b58",
     saved: "\u5df2\u4fdd\u5b58",
     saveFailed: "\u6807\u6ce8\u4fdd\u5b58\u5931\u8d25\u3002",
+    scanFailed: "\u5931\u8d25",
+    scanSourceFailed: "\u6765\u6e90\u9519\u8bef",
     scanImported: "\u5bfc\u5165",
     scanSkipped: "\u8df3\u8fc7",
     scanUpdated: "\u66f4\u65b0",
@@ -239,13 +243,15 @@ const state = {
   sourceFilter: "",
   favoritesOnly: false,
   includeArchived: false,
+  archivedOnly: false,
   latestStats: null,
   embedSidebarOpen: false,
   compactEmbed: false,
   activeDrawerSection: "sidebar-overview",
   settingsOpen: false,
   settings: loadSavedSettings(),
-  hostBridgeReady: false
+  hostBridgeReady: false,
+  hostBridgeOrigin: ""
 };
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -297,7 +303,7 @@ const LAYOUT = {
 };
 
 const ICON_LABELS = {
-  archive: "Archive",
+  archive: "Hide",
   brand: "ThreadVault",
   browser: "Open in browser",
   claude: "Claude",
@@ -355,10 +361,10 @@ const ICON_LABEL_KEYS = {
 
 const ICON_PATHS = {
   archive: `
-    <path d="M4.75 6.5h14.5" />
-    <path d="M6 6.5v12h12v-12" />
-    <path d="M8.25 3.75h7.5l1.5 2.75H6.75l1.5-2.75Z" />
-    <path d="M9.25 10.25h5.5" />
+    <path d="M4.75 12s2.5-4.25 7.25-4.25c1.45 0 2.7.4 3.75 1" />
+    <path d="M19.25 12s-2.5 4.25-7.25 4.25c-1.45 0-2.7-.4-3.75-1" />
+    <path d="M9.85 9.9a3 3 0 0 1 4.25 4.25" />
+    <path d="m5.25 18.75 13.5-13.5" />
   `,
   brand: `
     <path d="M5.25 6.75h13.5v12.5H5.25z" />
@@ -460,11 +466,8 @@ const ICON_PATHS = {
     <path d="M9.75 8.5h1.65c1.75 0 2.85.8 2.85 2v7" />
   `,
   restore: `
-    <path d="M4.75 7h14.5" />
-    <path d="M6 7v12h12V7" />
-    <path d="M8.25 4.25h7.5L17.25 7H6.75l1.5-2.75Z" />
-    <path d="M12 16.5v-5" />
-    <path d="m9.75 13.75 2.25-2.25 2.25 2.25" />
+    <path d="M4.75 12s2.5-4.25 7.25-4.25S19.25 12 19.25 12s-2.5 4.25-7.25 4.25S4.75 12 4.75 12Z" />
+    <circle cx="12" cy="12" r="2.6" />
   `,
   scan: `
     <path d="M18.25 8.25A7 7 0 0 0 6.1 7.4L4.75 9.25" />
@@ -543,6 +546,17 @@ function hydrateStaticIcons() {
 function t(key) {
   const dictionary = I18N[state.settings.language] || I18N.en;
   return dictionary[key] || I18N.en[key] || key;
+}
+
+function normalizeAnnotationState(annotation = {}) {
+  const archived = Boolean(annotation.archived);
+  return {
+    ...annotation,
+    favorite: archived ? false : Boolean(annotation.favorite),
+    archived,
+    tags: Array.isArray(annotation.tags) ? annotation.tags : [],
+    noteText: typeof annotation.noteText === "string" ? annotation.noteText : ""
+  };
 }
 
 function applyLocalizedText() {
@@ -979,6 +993,18 @@ function hasHostBridgeCandidate() {
   return isEmbedMode && isVsCodeHost && HOST_TOKEN_PATTERN.test(hostToken) && window.parent !== window;
 }
 
+function isAllowedHostBridgeOrigin(origin) {
+  if (!origin) {
+    return false;
+  }
+
+  return (
+    origin.startsWith("vscode-webview://") ||
+    /^https:\/\/[a-z0-9-]+\.vscode-cdn\.net$/i.test(origin) ||
+    /^https:\/\/[a-z0-9-]+\.vscode-webview\.net$/i.test(origin)
+  );
+}
+
 function announceHostBridgePresence() {
   if (!hasHostBridgeCandidate()) {
     return;
@@ -999,6 +1025,7 @@ window.addEventListener("message", (event) => {
   if (
     !hasHostBridgeCandidate() ||
     event.source !== window.parent ||
+    !isAllowedHostBridgeOrigin(event.origin) ||
     !payload ||
     payload.source !== "threadvault-host" ||
     payload.hostToken !== hostToken
@@ -1008,6 +1035,7 @@ window.addEventListener("message", (event) => {
 
   if (payload.type === "threadvault-host-ready") {
     state.hostBridgeReady = true;
+    state.hostBridgeOrigin = event.origin;
     return;
   }
 
@@ -1062,11 +1090,16 @@ async function postJson(url, payload) {
 }
 
 function hasHostBridge() {
-  return hasHostBridgeCandidate() && state.hostBridgeReady;
+  return hasHostBridgeCandidate() && state.hostBridgeReady && Boolean(state.hostBridgeOrigin);
 }
 
 function runHostAction(type, payload, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
+    if (!hasHostBridge()) {
+      reject(new Error(t("hostActionFailed")));
+      return;
+    }
+
     const requestId = `host-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const timeoutId = window.setTimeout(() => {
       pendingHostRequests.delete(requestId);
@@ -1087,7 +1120,7 @@ function runHostAction(type, payload, timeoutMs = 8000) {
         requestId,
         hostToken
       },
-      "*"
+      state.hostBridgeOrigin
     );
   });
 }
@@ -1316,6 +1349,9 @@ function renderTranscriptBlock(block) {
 }
 
 function filterPanelHtml(stats) {
+  const view = currentStatusView();
+  const visibleCount = stats.visibleSessionCount ?? Math.max((stats.sessionCount || 0) - (stats.archivedCount || 0), 0);
+
   return `
     <div class="filter-panel">
       <div class="filter-panel-title">
@@ -1324,28 +1360,65 @@ function filterPanelHtml(stats) {
       </div>
       <div class="filter-pill-row">
         <button
-          class="filter-pill ${state.favoritesOnly ? "is-active" : ""}"
+          class="filter-pill ${view === "all" ? "is-active" : ""}"
+          type="button"
+          data-status-filter="all"
+          aria-pressed="${view === "all" ? "true" : "false"}"
+        >
+          ${iconSlot("sessions")}
+          <span class="filter-pill-label">${escapeHtml(t("all"))}</span>
+          <span class="filter-pill-value">${visibleCount}</span>
+        </button>
+        <button
+          class="filter-pill ${view === "favorites" ? "is-active" : ""}"
           type="button"
           data-status-filter="favorites"
-          aria-pressed="${state.favoritesOnly ? "true" : "false"}"
+          aria-pressed="${view === "favorites" ? "true" : "false"}"
         >
           ${iconSlot("favorite")}
           <span class="filter-pill-label">${escapeHtml(t("favorites"))}</span>
           <span class="filter-pill-value">${stats.favoriteCount || 0}</span>
         </button>
         <button
-          class="filter-pill ${state.includeArchived ? "is-active" : ""}"
+          class="filter-pill ${view === "archived" ? "is-active" : ""}"
           type="button"
           data-status-filter="archived"
-          aria-pressed="${state.includeArchived ? "true" : "false"}"
+          aria-pressed="${view === "archived" ? "true" : "false"}"
         >
           ${iconSlot("archive")}
-          <span class="filter-pill-label">${escapeHtml(t("withArchived"))}</span>
+          <span class="filter-pill-label">${escapeHtml(t("archived"))}</span>
           <span class="filter-pill-value">${stats.archivedCount || 0}</span>
         </button>
       </div>
     </div>
   `;
+}
+
+function currentStatusView() {
+  if (state.archivedOnly) {
+    return "archived";
+  }
+
+  if (state.favoritesOnly) {
+    return "favorites";
+  }
+
+  return "all";
+}
+
+function setStatusView(view) {
+  const nextView = ["all", "favorites", "archived"].includes(view) ? view : "all";
+  state.favoritesOnly = nextView === "favorites";
+  state.archivedOnly = nextView === "archived";
+  state.includeArchived = nextView === "archived";
+
+  if (elements.favoritesOnly) {
+    elements.favoritesOnly.checked = state.favoritesOnly;
+  }
+
+  if (elements.includeArchived) {
+    elements.includeArchived.checked = state.archivedOnly;
+  }
 }
 
 function renderStats(stats) {
@@ -1357,7 +1430,7 @@ function renderStats(stats) {
       active: state.sourceFilter === "",
       sourceId: "",
       caption: t("all"),
-      icon: "archive"
+      icon: "sessions"
     },
     {
       label: "Copilot",
@@ -1439,15 +1512,7 @@ function renderStats(stats) {
     for (const node of filterContainer.querySelectorAll("[data-status-filter]")) {
       node.addEventListener("click", () => {
         const filter = node.getAttribute("data-status-filter");
-        if (filter === "favorites") {
-          elements.favoritesOnly.checked = !elements.favoritesOnly.checked;
-          state.favoritesOnly = elements.favoritesOnly.checked;
-        }
-
-        if (filter === "archived") {
-          elements.includeArchived.checked = !elements.includeArchived.checked;
-          state.includeArchived = elements.includeArchived.checked;
-        }
+        setStatusView(currentStatusView() === filter ? "all" : filter);
 
         setActiveSidebarSection("sidebar-sessions");
         elements.sessionsSection?.scrollIntoView({
@@ -1497,12 +1562,13 @@ function renderSessionList() {
   }
 
   elements.sessionList.innerHTML = state.sessions.map((session) => {
+    const annotation = normalizeAnnotationState(session.annotation);
     const activeClass = session.id === state.selectedSessionId ? "active" : "";
     const preview = stripInternalContext(session.searchSnippet || session.summary || "");
-    const favorite = session.annotation?.favorite
+    const favorite = annotation.favorite
       ? `<span class="favorite-indicator" title="${escapeHtml(ICON_LABELS.favoriteFilled)}">${iconSlot("favoriteFilled")}</span>`
       : "";
-    const tags = tagHtml(session.annotation?.tags || []);
+    const tags = tagHtml(annotation.tags);
 
     return `
       <article class="session-item ${activeClass}" data-session-id="${escapeHtml(session.id)}">
@@ -1562,17 +1628,18 @@ function annotationPanelHtml(tagValue, noteValue) {
 }
 
 function renderSessionDetail(session) {
-  const isFavorite = Boolean(session.annotation?.favorite);
-  const isArchived = Boolean(session.annotation?.archived);
-  const archiveProtected = isFavorite && !isArchived;
-  const favoriteLabel = isFavorite ? t("favoritedAction") : t("favoriteAction");
+  delete elements.sessionDetail.dataset.actionBusy;
+  const annotation = normalizeAnnotationState(session.annotation);
+  const isFavorite = Boolean(annotation.favorite);
+  const isArchived = Boolean(annotation.archived);
+  const favoriteLabel = isFavorite ? t("unfavoriteAction") : t("favoriteAction");
   const favoriteTitle = isFavorite ? t("unfavoriteAction") : t("favoriteAction");
   const archiveLabel = isArchived ? t("restoreAction") : t("archiveAction");
   const archiveIcon = isArchived ? "restore" : "archive";
-  const archiveTitle = archiveProtected ? t("protectedFavoriteTitle") : archiveLabel;
+  const archiveTitle = archiveLabel;
   const displayTitle = compactTitle(session.title);
-  const tagValue = Array.isArray(session.annotation?.tags) ? session.annotation.tags.join(", ") : "";
-  const noteValue = session.annotation?.noteText || "";
+  const tagValue = annotation.tags.join(", ");
+  const noteValue = annotation.noteText;
   const blocks = buildTranscriptBlocks(session.messages);
   const { secondary } = messageBucket(session.messages);
   const messageHtml = blocks.map(renderTranscriptBlock).join("");
@@ -1621,7 +1688,7 @@ function renderSessionDetail(session) {
           <span>${escapeHtml(session.workspaceName || t("noWorkspace"))}</span>
         </div>
       </div>
-      ${tagHtml(session.annotation?.tags || [])}
+      ${tagHtml(annotation.tags)}
       <div class="detail-toolbar">
         <div class="detail-actions">
           <button class="secondary-button action-button" type="button" data-action="open-source" title="${escapeHtml(t("sourceFile"))}">
@@ -1636,11 +1703,11 @@ function renderSessionDetail(session) {
             ${iconSlot(isFavorite ? "favoriteFilled" : "favorite")}
             <span>${escapeHtml(favoriteLabel)}</span>
           </button>
-          <button class="ghost-button action-button ${archiveProtected ? "is-protected" : ""}" type="button" data-action="archive-toggle" ${archiveProtected ? "disabled" : ""} title="${escapeHtml(archiveTitle)}" data-protected="${archiveProtected ? "true" : "false"}">
+          <button class="ghost-button action-button ${isArchived ? "is-hidden" : ""}" type="button" data-action="archive-toggle" title="${escapeHtml(archiveTitle)}">
             ${iconSlot(archiveIcon)}
             <span>${escapeHtml(archiveLabel)}</span>
           </button>
-          <button class="ghost-button action-button" type="button" data-action="export-markdown" title="${escapeHtml(t("export"))}">
+          <button class="ghost-button action-button" type="button" data-action="export-markdown" title="${escapeHtml(t("exportTitle"))}">
             ${iconSlot("export")}
             <span>${escapeHtml(t("export"))}</span>
           </button>
@@ -1648,7 +1715,7 @@ function renderSessionDetail(session) {
             ${iconSlot("memory")}
             <span>${escapeHtml(t("saveMemory"))}</span>
           </button>
-          <button class="ghost-button action-button" type="button" data-action="copy-link" title="${escapeHtml(t("copyLink"))}">
+          <button class="ghost-button action-button" type="button" data-action="copy-link" title="${escapeHtml(t("copyLinkTitle"))}">
             ${iconSlot("link")}
             <span>${escapeHtml(t("copyLink"))}</span>
           </button>
@@ -1701,12 +1768,16 @@ function renderSessionDetail(session) {
     if (!button || button.disabled) {
       return;
     }
+    if (elements.sessionDetail.dataset.actionBusy === "1") {
+      return;
+    }
 
     const status = elements.sessionDetail.querySelector("#annotation-status");
     const action = button.getAttribute("data-action");
     const originalLabel = button.querySelector("span:last-child")?.textContent || "";
 
     const setBusy = (text) => {
+      elements.sessionDetail.dataset.actionBusy = "1";
       button.disabled = true;
       const label = button.querySelector("span:last-child");
       if (label) {
@@ -1715,6 +1786,7 @@ function renderSessionDetail(session) {
     };
 
     const resetBusy = () => {
+      delete elements.sessionDetail.dataset.actionBusy;
       button.disabled = false;
       const label = button.querySelector("span:last-child");
       if (label) {
@@ -1735,7 +1807,10 @@ function renderSessionDetail(session) {
             path: session.sourcePath,
             target: "source"
           })
-          : await postJson("/api/open", { path: session.sourcePath });
+          : await postJson("/api/open", {
+            sessionId: session.id,
+            target: "source"
+          });
 
         if (!result?.ok) {
           showToast(result?.error || t("openSourceFailed"), "warning");
@@ -1767,7 +1842,10 @@ function renderSessionDetail(session) {
             path: session.workspacePath,
             target: "workspace"
           })
-          : await postJson("/api/open", { path: session.workspacePath });
+          : await postJson("/api/open", {
+            sessionId: session.id,
+            target: "workspace"
+          });
 
         if (!result?.ok) {
           showToast(result?.error || t("openWorkspaceFailed"), "warning");
@@ -1803,11 +1881,6 @@ function renderSessionDetail(session) {
     }
 
     if (action === "archive-toggle") {
-      if (archiveProtected) {
-        showToast(t("protectedFavorite"), "warning");
-        return;
-      }
-
       if (!isArchived) {
         const confirmed = window.confirm(t("archiveConfirm"));
         if (!confirmed) {
@@ -1818,7 +1891,8 @@ function renderSessionDetail(session) {
       try {
         setBusy(t("saving"));
         await saveAnnotation(session.id, {
-          archived: !isArchived
+          archived: !isArchived,
+          ...(!isArchived ? { favorite: false } : {})
         });
         showToast(`${t("saved")}.`, "success");
       } catch (error) {
@@ -1836,9 +1910,9 @@ function renderSessionDetail(session) {
           showToast(result.error || t("exportFailed"), "warning");
           return;
         }
-        const message = `${t("exportedTo")} ${result.path}`;
+        const message = `${t("exportedTo")} ${result.fileName || result.path}`;
         if (status) {
-          status.textContent = message;
+          status.textContent = `${t("exportedTo")} ${result.path}`;
         }
         showToast(message, "success");
       } catch (error) {
@@ -1857,9 +1931,9 @@ function renderSessionDetail(session) {
           showToast(result.error || t("memoryFailed"), "warning");
           return;
         }
-        const message = `${t("memorySaved")} ${result.path}`;
+        const message = `${t("memorySaved")} ${result.fileName || result.path}`;
         if (status) {
-          status.textContent = message;
+          status.textContent = `${t("memorySaved")} ${result.path}`;
         }
         showToast(message, "success");
       } catch (error) {
@@ -1904,8 +1978,8 @@ function currentListStateLabel() {
     segments.push(t("favorites"));
   }
 
-  if (state.includeArchived) {
-    segments.push(t("withArchived"));
+  if (state.archivedOnly) {
+    segments.push(t("archived"));
   }
 
   if (state.query) {
@@ -1927,7 +2001,9 @@ async function loadSessions() {
   if (state.favoritesOnly) {
     params.set("favoritesOnly", "1");
   }
-  if (state.includeArchived) {
+  if (state.archivedOnly) {
+    params.set("archivedOnly", "1");
+  } else if (state.includeArchived) {
     params.set("includeArchived", "1");
   }
   const query = params.toString() ? `?${params.toString()}` : "";
@@ -2017,9 +2093,11 @@ async function runScan() {
     const status = [
       `${t("scanImported")} ${result.importedSessions || 0}`,
       `${t("scanUpdated")} ${result.updatedSessions || 0}`,
-      `${t("scanSkipped")} ${result.skippedSessions || 0}`
+      `${t("scanSkipped")} ${result.skippedSessions || 0}`,
+      `${t("scanFailed")} ${result.failedSessions || 0}`,
+      `${t("scanSourceFailed")} ${result.failedSources || 0}`
     ].join(", ");
-    showToast(status, "success");
+    showToast(status, (result.failedSessions || result.failedSources) ? "warning" : "success");
   } finally {
     elements.scanButton.disabled = false;
     setButtonLabel(elements.scanButton, t("rescan"));
@@ -2043,14 +2121,14 @@ elements.searchInput.addEventListener("input", () => {
 });
 
 elements.favoritesOnly.addEventListener("change", () => {
-  state.favoritesOnly = elements.favoritesOnly.checked;
+  setStatusView(elements.favoritesOnly.checked ? "favorites" : "all");
   loadSessions().catch((error) => {
     showToast(String(error.message || error), "warning");
   });
 });
 
 elements.includeArchived.addEventListener("change", () => {
-  state.includeArchived = elements.includeArchived.checked;
+  setStatusView(elements.includeArchived.checked ? "archived" : "all");
   loadSessions().catch((error) => {
     showToast(String(error.message || error), "warning");
   });

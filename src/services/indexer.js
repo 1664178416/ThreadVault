@@ -1,12 +1,29 @@
 import { scanAllSources } from "../adapters/index.js";
 import { getStats, getSessionDetail, listSessions, updateSessionAnnotation, upsertImportedSessions } from "../db/repository.js";
 
+function summarizeSourceErrors(sourceStats = []) {
+  const sourceErrors = sourceStats
+    .filter((source) => source.error)
+    .map((source) => ({
+      sourceId: source.sourceId,
+      sourceLabel: source.sourceLabel,
+      error: source.error
+    }));
+
+  return {
+    failedSources: sourceErrors.length,
+    sourceErrors: sourceErrors.slice(0, 20)
+  };
+}
+
 export function runFullScan() {
   const { sessions, sourceStats } = scanAllSources();
   const writeStats = upsertImportedSessions(sessions);
+  const sourceErrorStats = summarizeSourceErrors(sourceStats);
 
   return {
     ...writeStats,
+    ...sourceErrorStats,
     sourceStats,
     stats: getStats()
   };

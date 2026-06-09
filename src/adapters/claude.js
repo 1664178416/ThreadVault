@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { CLAUDE_PROJECTS_DIR } from "../config.js";
-import { listFilesRecursive, readJsonLines } from "../utils/fs.js";
+import { listFilesRecursive, parseErrorSummary, readJsonLines, sortByModifiedDesc } from "../utils/fs.js";
 import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashText, isLowSignalTitle, snippet } from "../utils/text.js";
 
 function detectClaudeSource() {
@@ -205,7 +205,8 @@ function normalizeSession(records, filePath) {
     parseConfidence: 0.87,
     metadata: {
       version: firstRecord.version || null,
-      gitBranch: firstRecord.gitBranch || null
+      gitBranch: firstRecord.gitBranch || null,
+      parseErrors: parseErrorSummary(records.parseErrors)
     },
     messages
   };
@@ -218,11 +219,11 @@ export function scanClaudeSessions() {
 
   const files = listFilesRecursive(CLAUDE_PROJECTS_DIR)
     .filter((filePath) => filePath.endsWith(".jsonl"))
-    .filter((filePath) => !filePath.includes(`${path.sep}subagents${path.sep}`))
-    .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+    .filter((filePath) => !filePath.includes(`${path.sep}subagents${path.sep}`));
+  const sortedFiles = sortByModifiedDesc(files);
 
   const sessions = [];
-  for (const filePath of files) {
+  for (const filePath of sortedFiles) {
     try {
       const records = readJsonLines(filePath);
       const normalized = normalizeSession(records, filePath);

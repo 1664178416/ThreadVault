@@ -98,6 +98,10 @@ button {
   color: inherit;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
@@ -1425,19 +1429,10 @@ body.is-resizing-drawer {
   color: var(--favorite);
 }
 
-.action-button.is-protected {
-  border-color: rgba(155, 100, 27, 0.16);
-  background: rgba(155, 100, 27, 0.075);
-  color: var(--muted-strong);
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.action-button.is-protected:hover {
-  transform: none;
-  border-color: rgba(155, 100, 27, 0.24);
-  background: rgba(155, 100, 27, 0.1);
-  box-shadow: none;
+.action-button.is-hidden {
+  border-color: rgba(22, 28, 24, 0.12);
+  background: rgba(17, 22, 20, 0.08);
+  color: var(--muted);
 }
 
 .annotation-panel {

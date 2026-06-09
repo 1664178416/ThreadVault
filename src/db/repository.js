@@ -36,6 +36,10 @@ function normalizeTags(tags) {
   ).slice(0, 20);
 }
 
+function optionalBoolean(value) {
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function defaultAnnotation(sessionId) {
   return {
     sessionId,
@@ -59,10 +63,11 @@ function deserializeAnnotationRow(row) {
     tags = [];
   }
 
+  const archived = Boolean(row.archived);
   return {
     sessionId: row.sessionId || null,
-    favorite: Boolean(row.favorite),
-    archived: Boolean(row.archived),
+    favorite: archived ? false : Boolean(row.favorite),
+    archived,
     tags,
     noteText: row.noteText || "",
     updatedAt: row.updatedAt || null
@@ -216,15 +221,18 @@ export function upsertImportedSessions(sessions) {
     scannedSessions: sessions.length,
     importedSessions: 0,
     updatedSessions: 0,
-    skippedSessions: 0
+    skippedSessions: 0,
+    failedSessions: 0,
+    errors: []
   };
 
-  db.exec("BEGIN TRANSACTION");
-  try {
-    for (const session of sessions) {
+  for (const session of sessions) {
+    db.exec("BEGIN TRANSACTION");
+    try {
       const existingFingerprint = getSessionFingerprint(db, session.id);
       if (existingFingerprint && existingFingerprint === session.fingerprint) {
         stats.skippedSessions += 1;
+        db.exec("COMMIT");
         continue;
       }
 
@@ -237,21 +245,39 @@ export function upsertImportedSessions(sessions) {
       } else {
         stats.importedSessions += 1;
       }
-    }
 
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      stats.failedSessions += 1;
+      if (stats.errors.length < 20) {
+        stats.errors.push({
+          sessionId: session?.id || "",
+          sourcePath: session?.sourcePath || "",
+          error: String(error.message || error)
+        });
+      }
+    }
   }
 
   return stats;
 }
 
-export function listSessions({ query = "", limit = 200, favoritesOnly = false, includeArchived = false, sourceId = "" } = {}) {
+export function listSessions({
+  query = "",
+  limit = 200,
+  favoritesOnly = false,
+  includeArchived = false,
+  archivedOnly = false,
+  sourceId = ""
+} = {}) {
   const db = getDatabase();
-  const archivedClause = includeArchived ? "" : "AND COALESCE(a.archived, 0) = 0";
-  const favoriteClause = favoritesOnly ? "AND COALESCE(a.favorite, 0) = 1" : "";
+  const archivedClause = archivedOnly
+    ? "AND COALESCE(a.archived, 0) = 1"
+    : includeArchived
+      ? ""
+      : "AND COALESCE(a.archived, 0) = 0";
+  const favoriteClause = favoritesOnly ? "AND COALESCE(a.favorite, 0) = 1 AND COALESCE(a.archived, 0) = 0" : "";
   const sourceClauseFts = sourceId ? "AND s.source_id = ?" : "";
   const sourceClausePlain = sourceId ? "AND sessions.source_id = ?" : "";
 
@@ -464,10 +490,11 @@ export function getStats() {
     SELECT
       COUNT(*) AS sessionCount,
       COALESCE((SELECT COUNT(*) FROM messages), 0) AS messageCount,
+      COALESCE((SELECT COUNT(*) FROM sessions s LEFT JOIN session_annotations a ON a.session_id = s.id WHERE COALESCE(a.archived, 0) = 0), 0) AS visibleSessionCount,
       COALESCE((SELECT COUNT(*) FROM sessions WHERE source_id = 'copilot'), 0) AS copilotSessionCount,
       COALESCE((SELECT COUNT(*) FROM sessions WHERE source_id = 'codex'), 0) AS codexSessionCount,
       COALESCE((SELECT COUNT(*) FROM sessions WHERE source_id = 'claude'), 0) AS claudeSessionCount,
-      COALESCE((SELECT COUNT(*) FROM session_annotations a JOIN sessions s ON s.id = a.session_id WHERE a.favorite = 1), 0) AS favoriteCount,
+      COALESCE((SELECT COUNT(*) FROM session_annotations a JOIN sessions s ON s.id = a.session_id WHERE a.favorite = 1 AND COALESCE(a.archived, 0) = 0), 0) AS favoriteCount,
       COALESCE((SELECT COUNT(*) FROM session_annotations a JOIN sessions s ON s.id = a.session_id WHERE a.archived = 1), 0) AS archivedCount
     FROM sessions
   `).get();
@@ -482,6 +509,7 @@ export function getStats() {
   return {
     sessionCount: counts.sessionCount,
     messageCount: counts.messageCount,
+    visibleSessionCount: counts.visibleSessionCount,
     copilotSessionCount: counts.copilotSessionCount,
     codexSessionCount: counts.codexSessionCount,
     claudeSessionCount: counts.claudeSessionCount,
@@ -498,19 +526,21 @@ export function updateSessionAnnotation(sessionId, updates = {}) {
   }
 
   const current = getAnnotationForSession(db, sessionId);
-  const nextFavorite = updates.favorite ?? current.favorite;
-  const nextArchived = updates.archived ?? current.archived;
+  const updateFavorite = optionalBoolean(updates.favorite);
+  const updateArchived = optionalBoolean(updates.archived);
+  let nextFavorite = updateFavorite ?? current.favorite;
+  let nextArchived = updateArchived ?? current.archived;
 
-  if (nextFavorite && updates.archived === true) {
-    const error = new Error("Favorites are protected. Unfavorite before archiving.");
-    error.code = "PROTECTED_FAVORITE";
-    throw error;
+  if (updateFavorite === true) {
+    nextArchived = false;
+  } else if (updateArchived === true) {
+    nextFavorite = false;
   }
 
   const next = {
     sessionId,
     favorite: nextFavorite,
-    archived: nextFavorite ? false : nextArchived,
+    archived: nextArchived,
     tags: updates.tags ? normalizeTags(updates.tags) : current.tags,
     noteText: typeof updates.noteText === "string" ? updates.noteText.trim() : current.noteText,
     updatedAt: nowIso()

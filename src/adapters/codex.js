@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { CODEX_SESSIONS_DIR } from "../config.js";
-import { listFilesRecursive, readJsonLines } from "../utils/fs.js";
+import { listFilesRecursive, parseErrorSummary, readJsonLines, sortByModifiedDesc } from "../utils/fs.js";
 import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashText, snippet } from "../utils/text.js";
 
 function detectCodexSource() {
@@ -272,7 +272,8 @@ function normalizeSession(records, filePath) {
       originator: sessionMeta.originator || null,
       source: sessionMeta.source || null,
       cliVersion: sessionMeta.cli_version || null,
-      modelProvider: sessionMeta.model_provider || null
+      modelProvider: sessionMeta.model_provider || null,
+      parseErrors: parseErrorSummary(records.parseErrors)
     },
     messages
   };
@@ -284,11 +285,11 @@ export function scanCodexSessions() {
   }
 
   const files = listFilesRecursive(CODEX_SESSIONS_DIR)
-    .filter((filePath) => filePath.endsWith(".jsonl"))
-    .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+    .filter((filePath) => filePath.endsWith(".jsonl"));
+  const sortedFiles = sortByModifiedDesc(files);
 
   const sessions = [];
-  for (const filePath of files) {
+  for (const filePath of sortedFiles) {
     try {
       const records = readJsonLines(filePath);
       const normalized = normalizeSession(records, filePath);

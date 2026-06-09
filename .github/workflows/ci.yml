@@ -14,10 +14,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Check server and UI scripts
-        run: |
-          node --check src/server.js
-          node --check public/app.js
-          node --check extension/extension.js
       - name: Prepare extension bundle
         run: npm run prepare:extension
+      - name: Verify project
+        run: npm run verify

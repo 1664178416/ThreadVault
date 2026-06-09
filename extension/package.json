@@ -1,10 +1,12 @@
 {
   "name": "threadvault-vscode",
   "displayName": "ThreadVault",
-  "description": "A local-first archive shell for AI coding conversations.",
+  "description": "Local-first archive and search for AI coding conversations.",
   "version": "0.1.0",
   "publisher": "local",
+  "icon": "media/threadvault.png",
   "license": "SEE LICENSE IN LICENSE",
+  "type": "commonjs",
   "preview": true,
   "repository": {
     "type": "git",
@@ -16,8 +18,9 @@
   },
   "scripts": {
     "prepare:app": "node ../scripts/prepare-extension.mjs",
-    "package:vsix": "npm run prepare:app && npx @vscode/vsce package",
-    "publish:vsce": "npm run prepare:app && npx @vscode/vsce publish"
+    "verify": "node ../scripts/verify.mjs",
+    "package:vsix": "npm run prepare:app && npm run verify && npx @vscode/vsce package",
+    "publish:vsce": "npm run prepare:app && npm run verify && npx @vscode/vsce publish"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -48,6 +51,43 @@
   ],
   "main": "./extension.js",
   "contributes": {
+    "configuration": {
+      "title": "ThreadVault",
+      "properties": {
+        "threadvault.port": {
+          "type": "number",
+          "default": 3187,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Local HTTP port used by the ThreadVault service."
+        },
+        "threadvault.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Bind host for the local ThreadVault service. Use a host name or IP only, including ::1 for IPv6 localhost; set the port with threadvault.port."
+        },
+        "threadvault.clientHost": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Host name the extension uses to open and call ThreadVault. Use a host name or IP only, including ::1 for IPv6 localhost; set the port with threadvault.port."
+        },
+        "threadvault.nodePath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to a Node.js 24+ executable. Leave empty to use node from PATH."
+        },
+        "threadvault.dataDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom directory for ThreadVault's SQLite database and generated files. Leave empty to use the extension storage default."
+        },
+        "threadvault.memoryDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom directory for Markdown memory notes. Leave empty to use a memory folder inside the data directory."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

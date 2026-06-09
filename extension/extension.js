@@ -4,13 +4,19 @@ const fs = require("node:fs");
 const childProcess = require("node:child_process");
 const http = require("node:http");
 const crypto = require("node:crypto");
+const os = require("node:os");
 const extensionPackage = require("./package.json");
 
-const PORT = Number(process.env.THREADVAULT_PORT || 3187);
+const DEFAULT_PORT = 3187;
+const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_CLIENT_HOST = "127.0.0.1";
+const MIN_NODE_MAJOR = 24;
 const RUNTIME_APP_DIRNAME = "runtime-app";
 
 let serverProcess = null;
 let outputChannel = null;
+let serverConfigKey = "";
+let lastServerError = "";
 
 class ActionItem extends vscode.TreeItem {
   constructor(label, command, description) {
@@ -75,6 +81,94 @@ function logLine(message) {
   outputChannel?.appendLine(`[ThreadVault] ${message}`);
 }
 
+function setServerError(message) {
+  lastServerError = message;
+  logLine(message);
+}
+
+function extensionConfig() {
+  return vscode.workspace.getConfiguration("threadvault");
+}
+
+function configuredPort() {
+  const value = Number(extensionConfig().get("port", DEFAULT_PORT));
+  return Number.isInteger(value) && value > 0 && value <= 65535 ? value : DEFAULT_PORT;
+}
+
+function normalizeHostSetting(value, fallback, settingName) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    const parsed = new URL(text.includes("://") ? text : `http://${text}`);
+    if (parsed.hostname) {
+      if (parsed.port) {
+        logLine(`Ignoring port in ${settingName}; use threadvault.port instead.`);
+      }
+      return parsed.hostname.replace(/^\[(.*)\]$/, "$1");
+    }
+  } catch {
+    logLine(`Invalid ${settingName} value "${text}". Falling back to ${fallback}.`);
+  }
+
+  return fallback;
+}
+
+function configuredHost() {
+  return normalizeHostSetting(extensionConfig().get("host", DEFAULT_HOST), DEFAULT_HOST, "threadvault.host");
+}
+
+function configuredClientHost() {
+  return normalizeHostSetting(extensionConfig().get("clientHost", DEFAULT_CLIENT_HOST), DEFAULT_CLIENT_HOST, "threadvault.clientHost");
+}
+
+function urlHost(host) {
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
+function dashboardBaseUrl() {
+  return `http://${urlHost(configuredClientHost())}:${configuredPort()}`;
+}
+
+function configuredNodePath() {
+  return String(extensionConfig().get("nodePath", "") || "").trim() || "node";
+}
+
+function expandPath(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  if (text === "~") {
+    return os.homedir();
+  }
+
+  if (text.startsWith(`~${path.sep}`) || text.startsWith("~/")) {
+    return path.join(os.homedir(), text.slice(2));
+  }
+
+  return path.resolve(text);
+}
+
+function configuredPath(key, fallbackPath) {
+  return expandPath(extensionConfig().get(key, "")) || fallbackPath;
+}
+
+function serverConfigSignature(runtime) {
+  return JSON.stringify({
+    port: configuredPort(),
+    host: configuredHost(),
+    clientHost: configuredClientHost(),
+    nodePath: configuredNodePath(),
+    dataDir: runtime.dataDir,
+    memoryDir: runtime.memoryDir,
+    root: runtime.root
+  });
+}
+
 function hasAppFiles(rootPath) {
   return fs.existsSync(path.join(rootPath, "src", "server.js")) && fs.existsSync(path.join(rootPath, "public", "app.js"));
 }
@@ -96,12 +190,15 @@ function runtimeAppRoot(context) {
 }
 
 function ensureRuntimeApp(context) {
+  const defaultDevDataDir = path.join(developmentAppRoot(context), "data");
   const devRoot = developmentAppRoot(context);
   if (hasAppFiles(devRoot)) {
+    const dataDir = configuredPath("dataDirectory", defaultDevDataDir);
     return {
       mode: "development",
       root: devRoot,
-      dataDir: path.join(devRoot, "data")
+      dataDir,
+      memoryDir: configuredPath("memoryDirectory", path.join(dataDir, "memory"))
     };
   }
 
@@ -126,10 +223,12 @@ function ensureRuntimeApp(context) {
     logLine(`Prepared bundled app runtime in ${targetRoot}`);
   }
 
+  const dataDir = configuredPath("dataDirectory", path.join(storageRoot, "data"));
   return {
     mode: "bundled",
     root: targetRoot,
-    dataDir: path.join(storageRoot, "data")
+    dataDir,
+    memoryDir: configuredPath("memoryDirectory", path.join(dataDir, "memory"))
   };
 }
 
@@ -137,12 +236,55 @@ function serverEntry(appRoot) {
   return path.join(appRoot, "src", "server.js");
 }
 
+function checkNodeRuntime() {
+  const nodePath = configuredNodePath();
+  const result = childProcess.spawnSync(nodePath, ["-p", "process.versions.node"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+
+  if (result.error) {
+    return {
+      ok: false,
+      nodePath,
+      message: `Unable to run Node.js at "${nodePath}". Set threadvault.nodePath to a Node.js ${MIN_NODE_MAJOR}+ executable.`
+    };
+  }
+
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      nodePath,
+      message: `Node.js check failed for "${nodePath}": ${(result.stderr || result.stdout || "").trim()}`
+    };
+  }
+
+  const version = String(result.stdout || "").trim();
+  const major = Number(version.split(".")[0]);
+  if (!Number.isInteger(major) || major < MIN_NODE_MAJOR) {
+    return {
+      ok: false,
+      nodePath,
+      version,
+      message: `ThreadVault requires Node.js ${MIN_NODE_MAJOR}+ because it uses node:sqlite. Found ${version || "unknown"} at "${nodePath}".`
+    };
+  }
+
+  return {
+    ok: true,
+    nodePath,
+    version
+  };
+}
+
 function request(method, route) {
+  const port = configuredPort();
+  const host = configuredClientHost();
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
-        hostname: "127.0.0.1",
-        port: PORT,
+        hostname: host,
+        port,
         path: route,
         method
       },
@@ -166,6 +308,32 @@ function request(method, route) {
   });
 }
 
+function stopServerProcess(reason = "Stopping local server.") {
+  const processToStop = serverProcess;
+  if (!processToStop || processToStop.killed) {
+    serverProcess = null;
+    serverConfigKey = "";
+    return Promise.resolve();
+  }
+
+  logLine(reason);
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      logLine("Timed out waiting for the local server to stop.");
+      resolve();
+    }, 3000);
+
+    processToStop.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+
+    processToStop.kill();
+    serverProcess = null;
+    serverConfigKey = "";
+  });
+}
+
 async function isServerReady() {
   try {
     const payload = await request("GET", "/api/health");
@@ -176,26 +344,48 @@ async function isServerReady() {
 }
 
 async function ensureServer(context) {
-  if (await isServerReady()) {
+  const runtime = ensureRuntimeApp(context);
+  const nextConfigKey = serverConfigSignature(runtime);
+  let restartedForSettings = false;
+  if (serverProcess && !serverProcess.killed && serverConfigKey && serverConfigKey !== nextConfigKey) {
+    await stopServerProcess("ThreadVault settings changed. Restarting the local server.");
+    lastServerError = "";
+    restartedForSettings = true;
+  }
+
+  if (!restartedForSettings && await isServerReady()) {
     return true;
   }
 
   if (!serverProcess || serverProcess.killed) {
-    const runtime = ensureRuntimeApp(context);
-    fs.mkdirSync(runtime.dataDir, { recursive: true });
-    logLine(`Starting server from ${runtime.root} (${runtime.mode})`);
+    const nodeRuntime = checkNodeRuntime();
+    if (!nodeRuntime.ok) {
+      setServerError(nodeRuntime.message);
+      return false;
+    }
 
-    serverProcess = childProcess.spawn("node", [serverEntry(runtime.root)], {
+    lastServerError = "";
+    fs.mkdirSync(runtime.dataDir, { recursive: true });
+    fs.mkdirSync(runtime.memoryDir, { recursive: true });
+    logLine(`Starting server from ${runtime.root} (${runtime.mode})`);
+    logLine(`Using Node.js ${nodeRuntime.version} at ${nodeRuntime.nodePath}`);
+    logLine(`Using data directory ${runtime.dataDir}`);
+    logLine(`Using memory directory ${runtime.memoryDir}`);
+
+    serverProcess = childProcess.spawn(nodeRuntime.nodePath, [serverEntry(runtime.root)], {
       cwd: runtime.root,
       env: {
         ...process.env,
-        THREADVAULT_PORT: String(PORT),
+        THREADVAULT_PORT: String(configuredPort()),
+        THREADVAULT_HOST: configuredHost(),
         THREADVAULT_APP_ROOT: runtime.root,
-        THREADVAULT_DATA_DIR: runtime.dataDir
+        THREADVAULT_DATA_DIR: runtime.dataDir,
+        THREADVAULT_MEMORY_DIR: runtime.memoryDir
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });
+    serverConfigKey = nextConfigKey;
 
     serverProcess.stdout?.on("data", (chunk) => {
       const text = chunk.toString().trim();
@@ -212,12 +402,13 @@ async function ensureServer(context) {
     });
 
     serverProcess.on("exit", (code, signal) => {
-      logLine(`Server exited with code=${code ?? "null"} signal=${signal ?? "null"}`);
+      setServerError(`Server exited with code=${code ?? "null"} signal=${signal ?? "null"}`);
       serverProcess = null;
+      serverConfigKey = "";
     });
 
     serverProcess.on("error", (error) => {
-      logLine(`Server failed to start: ${error.message}`);
+      setServerError(`Server failed to start: ${error.message}`);
     });
   }
 
@@ -233,7 +424,7 @@ async function ensureServer(context) {
 }
 
 function buildPanelHtml(hostToken) {
-  const url = `http://127.0.0.1:${PORT}`;
+  const url = dashboardBaseUrl();
   const urlOrigin = new URL(url).origin;
   const cacheBust = Date.now();
   const embedUrl = `${url}/?embed=1&host=vscode&hostToken=${hostToken}&v=${cacheBust}`;
@@ -241,7 +432,7 @@ function buildPanelHtml(hostToken) {
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${url}; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${urlOrigin}; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
     <style>
       html, body, iframe {
         margin: 0;
@@ -299,7 +490,7 @@ function buildPanelHtml(hostToken) {
 }
 
 function browserDashboardUrl(candidateUrl) {
-  const baseUrl = new URL(`http://127.0.0.1:${PORT}`);
+  const baseUrl = new URL(dashboardBaseUrl());
   if (!candidateUrl) {
     return baseUrl.toString();
   }
@@ -324,9 +515,9 @@ function browserDashboardUrl(candidateUrl) {
 function postPanelMessage(panel, hostToken, payload) {
   logLine(`Sending host response: ${payload.requestId || "no-request-id"}`);
   panel.webview.postMessage({
+    ...payload,
     source: "threadvault-host",
-    hostToken,
-    ...payload
+    hostToken
   });
 }
 
@@ -382,7 +573,7 @@ function activate(context) {
         vscode.window.showInformationMessage("ThreadVault local server is ready.");
       } else {
         outputChannel.show(true);
-        vscode.window.showErrorMessage("ThreadVault server did not start in time.");
+        vscode.window.showErrorMessage(lastServerError || "ThreadVault server did not start in time.");
       }
     })
   );
@@ -392,10 +583,10 @@ function activate(context) {
       const ok = await ensureServer(context);
       if (!ok) {
         outputChannel.show(true);
-        vscode.window.showErrorMessage("ThreadVault server is not available.");
+        vscode.window.showErrorMessage(lastServerError || "ThreadVault server is not available.");
         return;
       }
-      await vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${PORT}`));
+      await vscode.env.openExternal(vscode.Uri.parse(dashboardBaseUrl()));
     })
   );
 
@@ -404,7 +595,7 @@ function activate(context) {
       const ok = await ensureServer(context);
       if (!ok) {
         outputChannel.show(true);
-        vscode.window.showErrorMessage("ThreadVault server is not available.");
+        vscode.window.showErrorMessage(lastServerError || "ThreadVault server is not available.");
         return;
       }
 
@@ -413,25 +604,34 @@ function activate(context) {
         "ThreadVault",
         vscode.ViewColumn.Beside,
         {
-          enableScripts: true
+          enableScripts: true,
+          localResourceRoots: []
         }
       );
       const hostToken = crypto.randomBytes(16).toString("hex");
       panel.webview.html = buildPanelHtml(hostToken);
       panel.webview.onDidReceiveMessage(async (message) => {
-        if (!message || message.source !== "threadvault-app") {
+        if (!message || message.source !== "threadvault-app" || message.hostToken !== hostToken) {
           return;
         }
 
         logLine(`Received webview action: ${message.type || "unknown"}`);
 
         if (message.type === "threadvault-open-browser") {
-          await vscode.env.openExternal(vscode.Uri.parse(browserDashboardUrl(message.payload?.url)));
-          postPanelMessage(panel, hostToken, {
-            requestId: message.requestId,
-            ok: true,
-            message: "Opened ThreadVault in your browser."
-          });
+          try {
+            await vscode.env.openExternal(vscode.Uri.parse(browserDashboardUrl(message.payload?.url)));
+            postPanelMessage(panel, hostToken, {
+              requestId: message.requestId,
+              ok: true,
+              message: "Opened ThreadVault in your browser."
+            });
+          } catch (error) {
+            postPanelMessage(panel, hostToken, {
+              requestId: message.requestId,
+              ok: false,
+              error: error.message || String(error)
+            });
+          }
           return;
         }
 
@@ -468,22 +668,23 @@ function activate(context) {
       const ok = await ensureServer(context);
       if (!ok) {
         outputChannel.show(true);
-        vscode.window.showErrorMessage("ThreadVault server is not available.");
+        vscode.window.showErrorMessage(lastServerError || "ThreadVault server is not available.");
         return;
       }
 
       const result = await request("POST", "/api/scan");
-      vscode.window.showInformationMessage(
-        `ThreadVault rescan completed. Imported ${result.importedSessions || 0}, updated ${result.updatedSessions || 0}, skipped ${result.skippedSessions || 0}.`
-      );
+      const message = `ThreadVault rescan completed. Imported ${result.importedSessions || 0}, updated ${result.updatedSessions || 0}, skipped ${result.skippedSessions || 0}, failed ${result.failedSessions || 0}, source errors ${result.failedSources || 0}.`;
+      if (result.failedSessions || result.failedSources) {
+        vscode.window.showWarningMessage(message);
+      } else {
+        vscode.window.showInformationMessage(message);
+      }
     })
   );
 }
 
 function deactivate() {
-  if (serverProcess && !serverProcess.killed) {
-    serverProcess.kill();
-  }
+  stopServerProcess("Stopping ThreadVault local server.");
 }
 
 module.exports = {
