@@ -19,8 +19,9 @@
   "scripts": {
     "prepare:app": "node ../scripts/prepare-extension.mjs",
     "verify": "node ../scripts/verify.mjs",
+    "verify:publish": "node ../scripts/verify.mjs --publish",
     "package:vsix": "npm run prepare:app && npm run verify && npx @vscode/vsce package",
-    "publish:vsce": "npm run prepare:app && npm run verify && npx @vscode/vsce publish"
+    "publish:vsce": "npm run prepare:app && npm run verify:publish && npx @vscode/vsce publish"
   },
   "engines": {
     "vscode": "^1.80.0"

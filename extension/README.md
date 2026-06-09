@@ -56,6 +56,12 @@ Then package from the `extension` folder. The package script runs `prepare:app` 
 npm run package:vsix
 ```
 
+The publish script runs the same preparation plus strict Marketplace checks. It fails while `publisher` is still `local`:
+
+```bash
+npm run publish:vsce
+```
+
 ## Marketplace Notes
 
 Before publishing, update at least these fields in `extension/package.json`:

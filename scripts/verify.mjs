@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
+const strictPublish = process.argv.includes("--publish");
 const warnings = [];
 
 function fail(message) {
@@ -364,7 +365,12 @@ if (extensionPackage) {
   }
 
   if (extensionPackage.publisher === "local") {
-    warn("extension/package.json publisher is still \"local\". Replace it with your VS Code Marketplace publisher id before publishing.");
+    const message = "extension/package.json publisher is still \"local\". Replace it with your VS Code Marketplace publisher id before publishing.";
+    if (strictPublish) {
+      fail(message);
+    } else {
+      warn(message);
+    }
   }
 
   if (extensionPackage.type !== "commonjs") {
@@ -375,11 +381,18 @@ if (extensionPackage) {
     fail("extension/package.json should expose a verify script that runs ../scripts/verify.mjs.");
   }
 
-  for (const scriptName of ["package:vsix", "publish:vsce"]) {
-    const script = extensionPackage.scripts?.[scriptName] || "";
-    if (!script.includes("npm run prepare:app") || !script.includes("npm run verify")) {
-      fail(`extension/package.json ${scriptName} should run prepare:app and verify before vsce.`);
-    }
+  const packageScript = extensionPackage.scripts?.["package:vsix"] || "";
+  if (!packageScript.includes("npm run prepare:app") || !packageScript.includes("npm run verify")) {
+    fail("extension/package.json package:vsix should run prepare:app and verify before vsce.");
+  }
+
+  if (extensionPackage.scripts?.["verify:publish"] !== "node ../scripts/verify.mjs --publish") {
+    fail("extension/package.json should expose verify:publish for strict Marketplace checks.");
+  }
+
+  const publishScript = extensionPackage.scripts?.["publish:vsce"] || "";
+  if (!publishScript.includes("npm run prepare:app") || !publishScript.includes("npm run verify:publish")) {
+    fail("extension/package.json publish:vsce should run prepare:app and verify:publish before vsce.");
   }
 
   if (extensionPackage.icon && !fileExists(path.join("extension", extensionPackage.icon))) {

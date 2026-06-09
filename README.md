@@ -152,6 +152,12 @@ code --install-extension threadvault-vscode-*.vsix
 
 Before publishing publicly, update the extension metadata in `extension/package.json`, especially `publisher`, `repository`, `homepage`, `bugs`, and `version`. Keep the Marketplace icon at `extension/media/threadvault.png`.
 
+The normal verification command warns while `publisher` is still `local`. The publish script uses a stricter check and will fail until `publisher` is replaced:
+
+```bash
+npm run publish:vsce
+```
+
 ## Data And Privacy
 
 ThreadVault indexes local chat history into:
