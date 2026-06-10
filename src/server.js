@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { URL } from "node:url";
+import { pathToFileURL, URL } from "node:url";
 
 import { APP_HOST, APP_NAME, APP_PORT, DATA_DIR, PUBLIC_DIR } from "./config.js";
 import { ensureDir } from "./utils/fs.js";
@@ -12,10 +12,49 @@ import { exportSessionToMarkdown, saveSessionToMemory } from "./services/exporte
 ensureDir(DATA_DIR);
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const LOOPBACK_WRITE_HOSTS = ["127.0.0.1", "localhost", "::1"];
 
-function corsHeaders(request) {
+function urlHost(host) {
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
+function normalizeOrigin(origin) {
+  if (!origin) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== "http:") {
+      return "";
+    }
+
+    const host = parsed.hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+    const port = parsed.port || "80";
+    return `http://${urlHost(host)}:${port}`;
+  } catch {
+    return "";
+  }
+}
+
+function allowedWriteOrigins() {
+  const origins = new Set(LOOPBACK_WRITE_HOSTS.map((host) => `http://${urlHost(host)}:${APP_PORT}`));
+  const configuredHost = String(APP_HOST || "").replace(/^\[(.*)\]$/, "$1").toLowerCase();
+  if (configuredHost && configuredHost !== "0.0.0.0" && configuredHost !== "::") {
+    origins.add(`http://${urlHost(configuredHost)}:${APP_PORT}`);
+  }
+  return origins;
+}
+
+const ALLOWED_WRITE_ORIGINS = allowedWriteOrigins();
+
+function isAllowedWriteOrigin(origin) {
+  return !origin || ALLOWED_WRITE_ORIGINS.has(normalizeOrigin(origin));
+}
+
+export function corsHeaders(request) {
   const origin = request.headers.origin || "";
-  if (!origin || origin === serverOrigin(request)) {
+  if (isAllowedWriteOrigin(origin)) {
     return {
       "Access-Control-Allow-Origin": origin || "*",
       "Vary": "Origin"
@@ -27,37 +66,54 @@ function corsHeaders(request) {
   };
 }
 
-function serverOrigin(request) {
-  const protocol = request.socket.encrypted ? "https" : "http";
-  const host = request.headers.host || `${APP_HOST}:${APP_PORT}`;
-  return `${protocol}://${host}`;
-}
-
-function urlHost(host) {
-  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-}
-
-function requestHasAllowedWriteOrigin(request) {
+export function requestHasAllowedWriteOrigin(request) {
   const origin = request.headers.origin || "";
-  return !origin || origin === serverOrigin(request);
+  return isAllowedWriteOrigin(origin);
+}
+
+function baseHeaders(request) {
+  return {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' vscode-webview: https://*.vscode-webview.net https://*.vscode-cdn.net; base-uri 'none'; form-action 'none'",
+    ...corsHeaders(request)
+  };
 }
 
 function hasSessionId(payload) {
   return typeof payload.sessionId === "string" && payload.sessionId.trim().length > 0;
 }
 
+function decodePathComponent(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 function sendJson(request, response, statusCode, payload) {
   response.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    ...corsHeaders(request)
+    ...baseHeaders(request)
   });
   response.end(JSON.stringify(payload));
 }
 
 function sendFile(request, response, filePath, contentType) {
+  response.writeHead(200, {
+    "Content-Type": contentType,
+    ...baseHeaders(request)
+  });
+
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+
   const stream = fs.createReadStream(filePath);
   stream.on("error", (error) => {
     if (!response.headersSent) {
@@ -70,12 +126,11 @@ function sendFile(request, response, filePath, contentType) {
     }
   });
 
-  response.writeHead(200, {
-    "Content-Type": contentType,
-    "Cache-Control": "no-store",
-    ...corsHeaders(request)
-  });
   stream.pipe(response);
+}
+
+function methodAllowedForStatic(method) {
+  return method === "GET" || method === "HEAD";
 }
 
 function getContentType(filePath) {
@@ -123,8 +178,23 @@ function resolveStaticPath(pathname) {
 }
 
 function serveStatic(request, response, pathname) {
+  if (!methodAllowedForStatic(request.method)) {
+    sendJson(request, response, 405, {
+      ok: false,
+      error: "Method not allowed."
+    });
+    return;
+  }
+
   const filePath = resolveStaticPath(pathname);
-  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+  let fileStat = null;
+  try {
+    fileStat = filePath ? fs.statSync(filePath) : null;
+  } catch {
+    fileStat = null;
+  }
+
+  if (!fileStat?.isFile()) {
     sendJson(request, response, 404, { error: "Not found" });
     return;
   }
@@ -210,7 +280,13 @@ function handleApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    sendJson(request, response, 200, { ok: true, app: APP_NAME });
+    sendJson(request, response, 200, {
+      ok: true,
+      app: APP_NAME,
+      host: APP_HOST,
+      port: APP_PORT,
+      node: process.versions.node
+    });
     return;
   }
 
@@ -236,7 +312,15 @@ function handleApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname.startsWith("/api/sessions/")) {
-    const sessionId = decodeURIComponent(url.pathname.replace("/api/sessions/", ""));
+    const sessionId = decodePathComponent(url.pathname.replace("/api/sessions/", ""));
+    if (sessionId === null) {
+      sendJson(request, response, 400, {
+        ok: false,
+        error: "Invalid session id encoding."
+      });
+      return;
+    }
+
     const session = getSessionById(sessionId);
     if (!session) {
       sendJson(request, response, 404, { error: "Session not found" });
@@ -248,10 +332,18 @@ function handleApi(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/api/open") {
     readBody(request, response, async (payload) => {
-      if (!hasSessionId(payload) || !["source", "workspace"].includes(payload.target)) {
+      if (!hasSessionId(payload)) {
         sendJson(request, response, 400, {
           ok: false,
-          error: "Session id and target are required."
+          error: "Session id is required."
+        });
+        return;
+      }
+
+      if (!["source", "workspace"].includes(payload.target)) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: "Open target must be source or workspace."
         });
         return;
       }
@@ -357,7 +449,7 @@ function handleApi(request, response, url) {
   sendJson(request, response, 404, { error: "Unknown API route" });
 }
 
-function createServer() {
+export function createServer() {
   return http.createServer((request, response) => {
     try {
       const url = new URL(request.url || "/", `http://${request.headers.host || `localhost:${APP_PORT}`}`);
@@ -378,6 +470,10 @@ function createServer() {
       }
     }
   });
+}
+
+function isMainModule() {
+  return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 }
 
 function logScanResult(prefix, result) {
@@ -420,4 +516,6 @@ function main() {
   });
 }
 
-main();
+if (isMainModule()) {
+  main();
+}

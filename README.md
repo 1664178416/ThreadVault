@@ -1,5 +1,7 @@
 # ThreadVault
 
+[![CI](https://github.com/wyh/threadvault/actions/workflows/ci.yml/badge.svg)](https://github.com/wyh/threadvault/actions/workflows/ci.yml)
+
 ThreadVault is a local-first archive for AI coding conversations. It scans your local GitHub Copilot Chat, Codex, and Claude Code history, stores it in SQLite, and gives you a clean searchable UI for reviewing, tagging, favoriting, hiding, reopening, and exporting sessions.
 
 Everything runs on your machine. No cloud account, sync service, or hosted backend is required.
@@ -48,7 +50,7 @@ npm run scan
 3. Check the source counters for Copilot, Codex, and Claude.
 4. Use search to find an old prompt, error message, file name, or project name.
 5. Select a session to read the transcript.
-6. Use `Favorite`, `Hide`, `Notes`, `Export`, or `Memory` as needed.
+6. Set the session state to `Regular`, `Favorite`, or `Hidden`, then use `Notes`, `Export`, or `Memory` as needed.
 
 If no sessions appear, make sure you have used at least one supported tool locally and that its history files exist on disk.
 
@@ -73,6 +75,18 @@ The dashboard has three main areas:
 - `Transcript`: selected conversation, local annotations, source/workspace actions, Markdown export, memory save, and expandable process details
 
 Tool and system traces are collapsed by default so the main conversation stays readable.
+
+Session state is intentionally one-of-three:
+
+- `Regular`: keep the session in the normal library.
+- `Favorite`: keep the session visible and add it to the Favorites view.
+- `Hidden`: remove the session from Regular and Favorites views. This does not delete the source history file or the local database row.
+
+The transcript actions have different jobs:
+
+- `Export MD`: create a Markdown copy under `data/exports/` for sharing, backup, or manual review.
+- `Memory`: save a durable Markdown note under the memory directory for conversations worth reusing later.
+- `Copy link`: copy a local URL that opens the dashboard directly on the selected session.
 
 ## Markdown Memory
 
@@ -131,26 +145,27 @@ In development mode, the extension reads the app from the repository root, so yo
 
 ## Packaging The Extension
 
-Prepare and verify the app bundle:
+From the repository root, prepare, verify, and package the extension:
 
 ```bash
 npm run prepare:extension
 npm run verify
-```
-
-Package from the `extension` folder:
-
-```bash
 npm run package:vsix
 ```
 
 Install the generated VSIX:
 
 ```bash
-code --install-extension threadvault-vscode-*.vsix
+code --install-extension extension/threadvault-vscode-*.vsix
 ```
 
-Before publishing publicly, update the extension metadata in `extension/package.json`, especially `publisher`, `repository`, `homepage`, `bugs`, and `version`. Keep the Marketplace icon at `extension/media/threadvault.png`.
+On Windows PowerShell, install the newest generated VSIX with:
+
+```powershell
+code --install-extension (Get-ChildItem extension\threadvault-vscode-*.vsix | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+```
+
+Before publishing publicly, update the extension metadata in `extension/package.json`, especially `publisher`, `repository`, `homepage`, `bugs`, `version`, `preview`, and `galleryBanner`. Keep the Marketplace icon at `extension/media/threadvault.png`, and keep `SECURITY.md` plus `CONTRIBUTING.md` aligned with the public repository.
 
 The normal verification command warns while `publisher` is still `local`. The publish script uses a stricter check and will fail until `publisher` is replaced:
 
@@ -180,8 +195,9 @@ data/memory/
 
 These files may contain private prompts, code, paths, notes, and transcripts. The local `data/` directory is ignored by `.gitignore` and should not be committed.
 
-The local HTTP API is intended for ThreadVault itself, VS Code, and browser pages opened from `localhost` or `127.0.0.1`. Do not expose the port to a public network.
-By default the server binds to `127.0.0.1`. Set `THREADVAULT_HOST` only if you understand the privacy implications.
+The local HTTP API is intended for ThreadVault itself, VS Code, and browser pages opened from `localhost`, `127.0.0.1`, or `::1`. Write requests are restricted to these local origins plus the explicitly configured bind host. Do not expose the port to a public network.
+
+By default the server binds to `127.0.0.1`. Set `THREADVAULT_HOST` only if you understand the privacy implications. If you bind to `0.0.0.0`, keep browser access on `127.0.0.1` unless you intentionally want other devices on your network to reach the service.
 
 Before pushing to GitHub, double-check:
 
@@ -190,6 +206,12 @@ git status --short
 ```
 
 Make sure `data/` and packaged `.vsix` files are not staged.
+
+## Contributing And Security
+
+See `CONTRIBUTING.md` for local setup, verification commands, privacy rules, and UI guidelines.
+
+See `SECURITY.md` for the supported security model and how to report local file, HTTP API, VS Code webview, export, memory, or packaging issues without exposing private conversation data.
 
 ## Useful Commands
 

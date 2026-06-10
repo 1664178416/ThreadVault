@@ -1,65 +1,57 @@
 # ThreadVault Data Schema
 
-## 1. Database Choice
+This document mirrors the current schema created in `src/db/database.js`.
 
-- Engine: SQLite
-- Full-text search: FTS5
-- Migration strategy: SQL files or code-defined migrations
+## Database
 
-## 2. Tables
+- Engine: SQLite through Node.js `node:sqlite`
+- Journal mode: WAL
+- Search: SQLite FTS5 virtual table
+- Default file: `data/threadvault.sqlite`
 
-### 2.1 `sources`
+## Tables
 
-```sql
-CREATE TABLE sources (
-  id TEXT PRIMARY KEY,
-  label TEXT NOT NULL,
-  adapter_version TEXT NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  last_detected_at TEXT,
-  last_scan_at TEXT,
-  last_scan_status TEXT,
-  last_scan_error TEXT
-);
-```
-
-### 2.2 `sessions`
+### `sessions`
 
 ```sql
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   source_id TEXT NOT NULL,
+  source_label TEXT NOT NULL,
   source_session_id TEXT,
-  fingerprint TEXT NOT NULL,
-  workspace_path TEXT,
-  workspace_name TEXT,
   title TEXT NOT NULL,
   summary TEXT,
+  workspace_path TEXT,
+  workspace_name TEXT,
   created_at TEXT,
   updated_at TEXT,
-  first_message_at TEXT,
-  last_message_at TEXT,
   status TEXT,
   resume_type TEXT NOT NULL,
-  resume_payload_json TEXT,
+  fingerprint TEXT NOT NULL,
   source_path TEXT,
   parse_confidence REAL,
-  favorite INTEGER NOT NULL DEFAULT 0,
-  archived INTEGER NOT NULL DEFAULT 0,
-  metadata_json TEXT,
-  FOREIGN KEY (source_id) REFERENCES sources(id)
+  metadata_json TEXT NOT NULL
 );
-
-CREATE UNIQUE INDEX idx_sessions_fingerprint ON sessions(fingerprint);
-CREATE INDEX idx_sessions_source_id ON sessions(source_id);
-CREATE INDEX idx_sessions_workspace_path ON sessions(workspace_path);
-CREATE INDEX idx_sessions_updated_at ON sessions(updated_at);
 ```
 
-### 2.3 `messages`
+Indexes:
 
 ```sql
-CREATE TABLE messages (
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_fingerprint ON sessions(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at);
+```
+
+Notes:
+
+- `source_id` is currently one of `copilot`, `codex`, or `claude`.
+- `source_label` is stored directly on each session so the UI does not need a separate source lookup table.
+- `fingerprint` deduplicates imported sessions across scans.
+- `metadata_json` stores adapter-specific fields and parser hints.
+
+### `messages`
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL,
@@ -67,185 +59,87 @@ CREATE TABLE messages (
   content TEXT NOT NULL,
   timestamp TEXT,
   model TEXT,
-  tool_calls_json TEXT,
-  attachments_json TEXT,
-  referenced_files_json TEXT,
-  metadata_json TEXT,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-
-CREATE INDEX idx_messages_session_id ON messages(session_id);
-CREATE INDEX idx_messages_ordinal ON messages(session_id, ordinal);
-```
-
-### 2.4 `tags`
-
-```sql
-CREATE TABLE tags (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  color TEXT
+  referenced_files_json TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 ```
 
-### 2.5 `session_tags`
+Index:
 
 ```sql
-CREATE TABLE session_tags (
-  session_id TEXT NOT NULL,
-  tag_id TEXT NOT NULL,
-  PRIMARY KEY (session_id, tag_id),
-  FOREIGN KEY (session_id) REFERENCES sessions(id),
-  FOREIGN KEY (tag_id) REFERENCES tags(id)
+CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+```
+
+Notes:
+
+- `ordinal` preserves transcript order.
+- `role` is normalized to user, assistant, system, tool, or source-specific fallback values.
+- Referenced files are stored as JSON for simple rendering and search refresh.
+
+### `session_annotations`
+
+```sql
+CREATE TABLE IF NOT EXISTS session_annotations (
+  session_id TEXT PRIMARY KEY,
+  favorite INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  note_text TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
 );
 ```
 
-### 2.6 `notes`
+Indexes:
 
 ```sql
-CREATE TABLE notes (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL,
-  body TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
+CREATE INDEX IF NOT EXISTS idx_session_annotations_favorite ON session_annotations(favorite);
+CREATE INDEX IF NOT EXISTS idx_session_annotations_archived ON session_annotations(archived);
 ```
 
-### 2.7 `artifacts`
+Rules:
+
+- `favorite` and `archived` are mutually exclusive.
+- If a legacy row has both set, schema initialization clears `favorite`.
+- Tags are normalized, deduplicated, and capped in application code.
+- Notes and tags are included in the search document.
+
+### `session_search`
 
 ```sql
-CREATE TABLE artifacts (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  path TEXT,
-  metadata_json TEXT,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-```
-
-### 2.8 `scan_events`
-
-```sql
-CREATE TABLE scan_events (
-  id TEXT PRIMARY KEY,
-  source_id TEXT NOT NULL,
-  started_at TEXT NOT NULL,
-  completed_at TEXT,
-  status TEXT NOT NULL,
-  scanned_count INTEGER NOT NULL DEFAULT 0,
-  imported_count INTEGER NOT NULL DEFAULT 0,
-  updated_count INTEGER NOT NULL DEFAULT 0,
-  skipped_count INTEGER NOT NULL DEFAULT 0,
-  error_text TEXT,
-  FOREIGN KEY (source_id) REFERENCES sources(id)
-);
-```
-
-## 3. Full Text Search
-
-### 3.1 `session_search`
-
-```sql
-CREATE VIRTUAL TABLE session_search USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
   session_id UNINDEXED,
   title,
   summary,
   workspace_name,
-  tags,
   body
 );
 ```
 
-### 3.2 Indexed Body Composition
+Search body composition:
 
-The `body` field should be built from:
+- Source label
+- Message content
+- Referenced file names
+- Annotation tags
+- Annotation note text
 
-- all message content concatenated
-- referenced file names
-- source label
+## Import And Refresh Behavior
 
-## 4. Normalized Type Shapes
+- Scans upsert sessions by `id` and keep local annotations intact.
+- Messages for an imported session are replaced during import to reflect the latest parsed source state.
+- Search rows are refreshed after import and after annotation updates.
+- Imported sessions are retained when source history disappears; ThreadVault does not delete local records automatically.
 
-### 4.1 `NormalizedSession`
+## Markdown Outputs
 
-```ts
-type ResumeType = "native" | "workspace_only" | "archive_only";
+Markdown export and memory files are not represented as database rows.
 
-interface NormalizedSession {
-  id: string;
-  sourceId: string;
-  sourceSessionId?: string;
-  fingerprint: string;
-  workspacePath?: string;
-  workspaceName?: string;
-  title: string;
-  summary?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  firstMessageAt?: string;
-  lastMessageAt?: string;
-  status?: string;
-  resumeType: ResumeType;
-  resumePayload?: Record<string, unknown>;
-  sourcePath?: string;
-  parseConfidence?: number;
-  favorite?: boolean;
-  archived?: boolean;
-  metadata?: Record<string, unknown>;
-  messages: NormalizedMessage[];
-  artifacts?: NormalizedArtifact[];
-}
+Default locations:
+
+```text
+data/exports/
+data/memory/YYYY-MM-DD/<source>/<workspace>/<session>.md
 ```
 
-### 4.2 `NormalizedMessage`
-
-```ts
-interface NormalizedMessage {
-  id: string;
-  ordinal: number;
-  role: "user" | "assistant" | "system" | "tool";
-  content: string;
-  timestamp?: string;
-  model?: string;
-  toolCalls?: unknown[];
-  attachments?: unknown[];
-  referencedFiles?: string[];
-  metadata?: Record<string, unknown>;
-}
-```
-
-### 4.3 `NormalizedArtifact`
-
-```ts
-interface NormalizedArtifact {
-  id: string;
-  type: "file" | "image" | "export" | "link" | "command";
-  path?: string;
-  metadata?: Record<string, unknown>;
-}
-```
-
-## 5. Fingerprint Algorithm
-
-Recommended fingerprint input:
-
-- source id
-- source session id if present
-- workspace path
-- title
-- first message timestamp
-- first message snippet
-- last message snippet
-- message count
-
-Then hash to SHA-256 hex.
-
-## 6. Data Retention Rules
-
-- Keep imported sessions indefinitely unless deleted
-- Do not remove sessions automatically when source history disappears
-- Mark sessions as orphaned only if needed in later versions
-
+These files may contain private prompts, code, paths, notes, and transcripts. They are ignored by Git and should be reviewed before sharing.

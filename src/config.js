@@ -2,10 +2,41 @@ import path from "node:path";
 import os from "node:os";
 
 const APP_ROOT = process.env.THREADVAULT_APP_ROOT || process.cwd();
+const DEFAULT_PORT = 3187;
+const DEFAULT_HOST = "127.0.0.1";
+
+function parsePort(value, fallback = DEFAULT_PORT) {
+  const port = Number(value || fallback);
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : fallback;
+}
+
+function normalizeHostSetting(value, fallback = DEFAULT_HOST) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return fallback;
+  }
+
+  const bracketless = text.replace(/^\[(.*)\]$/, "$1");
+  const maybeBareIpv6 = bracketless.split(":").length > 2;
+  if (!text.includes("://") && maybeBareIpv6 && /^[0-9a-f:.]+$/i.test(bracketless)) {
+    return bracketless;
+  }
+
+  try {
+    const parsed = new URL(text.includes("://") ? text : `http://${text}`);
+    if (parsed.hostname) {
+      return parsed.hostname.replace(/^\[(.*)\]$/, "$1");
+    }
+  } catch {
+    return fallback;
+  }
+
+  return fallback;
+}
 
 export const APP_NAME = "ThreadVault";
-export const APP_PORT = Number(process.env.THREADVAULT_PORT || 3187);
-export const APP_HOST = process.env.THREADVAULT_HOST || "127.0.0.1";
+export const APP_PORT = parsePort(process.env.THREADVAULT_PORT);
+export const APP_HOST = normalizeHostSetting(process.env.THREADVAULT_HOST);
 export const DATA_DIR = process.env.THREADVAULT_DATA_DIR || path.join(APP_ROOT, "data");
 export const DB_PATH = path.join(DATA_DIR, "threadvault.sqlite");
 export const EXPORT_DIR = path.join(DATA_DIR, "exports");

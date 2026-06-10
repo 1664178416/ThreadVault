@@ -1,206 +1,59 @@
 # ThreadVault Implementation Plan
 
-## 1. Development Objective
-
-Reach a working MVP that supports:
-
-- one live source adapter
-- local indexing
-- SQLite persistence
-- sidebar listing
-- session detail rendering
-- full-text search
-- workspace reopen
-- Markdown export
-
-## 2. Build Order
-
-Development should follow dependency order, not UI-first order.
-
-### Step 1: Shared Types
-
-Deliverables:
-
-- `ResumeType`
-- `SourceAdapter`
-- `NormalizedSession`
-- `NormalizedMessage`
-- IPC request/response types
-
-Definition of done:
-
-- shared package compiles
-- types used by both extension and indexer
-
-### Step 2: Database Layer
-
-Deliverables:
-
-- SQLite client
-- migrations
-- repositories:
-  - sessions
-  - messages
-  - tags
-  - search
-
-Definition of done:
-
-- schema creates successfully
-- test insert and fetch works
-
-### Step 3: Search Layer
-
-Deliverables:
-
-- FTS index writer
-- search parser
-- search query executor
-
-Definition of done:
-
-- session text searchable through FTS
-- metadata filters work
-
-### Step 4: Adapter Framework
-
-Deliverables:
-
-- adapter interface
-- detection pipeline
-- scan manager
-- parse error reporting
-
-Definition of done:
-
-- mock adapter can import sample data end-to-end
-
-### Step 5: First Real Adapter
-
-Deliverables:
-
-- choose first real source
-- local fixture corpus
-- parser
-- normalizer
-
-Definition of done:
-
-- real sessions imported from local storage
-- detail view data complete enough to browse
-
-### Step 6: Indexer Service
-
-Deliverables:
-
-- background service entrypoint
-- IPC request handling
-- scan command
-- list/get/search/export commands
-
-Definition of done:
-
-- extension can query service successfully
-
-### Step 7: VS Code Sidebar
-
-Deliverables:
-
-- tree provider
-- refresh command
-- grouped session nodes
-
-Definition of done:
-
-- user can browse imported sessions in sidebar
-
-### Step 8: Session Detail Webview
-
-Deliverables:
-
-- detail panel
-- transcript rendering
-- metadata header
-- click to open referenced files
-
-Definition of done:
-
-- transcript readable and stable on large sessions
-
-### Step 9: Export and Reopen
-
-Deliverables:
-
-- Markdown exporter
-- workspace open action
-- native resume hook if supported by first source
-
-Definition of done:
-
-- exported Markdown is readable
-- workspace open is reliable
-
-## 3. MVP Sprint Breakdown
-
-### Sprint 1
-
-- repo scaffold
-- shared types
-- SQLite schema
-- basic repositories
-
-### Sprint 2
-
-- search layer
-- mock adapter
-- scan pipeline
-- sample fixture tests
-
-### Sprint 3
-
-- first real adapter
-- end-to-end import
-- list sessions API
-
-### Sprint 4
-
-- VS Code sidebar
-- session detail webview
-- search UI
-
-### Sprint 5
-
-- workspace open
-- Markdown export
-- tags and favorites
-- parser diagnostics
-
-## 4. Open Questions Before Coding
-
-These questions must be resolved before writing the first real adapter:
-
-1. Which source is first?
-2. Does that source store transcripts locally in a readable format?
-3. Does it expose enough metadata to reopen a session?
-4. Are source updates frequent enough to require file watching, or is manual scan enough for MVP?
-
-## 5. Recommendation for First Source
-
-Pick the source that satisfies:
-
-- readable local storage
-- stable enough structure
-- high personal usage frequency
-
-Do not pick based on popularity alone.
-
-## 6. Acceptance Criteria for MVP
-
-- One-click scan works
-- At least 20 real sessions import successfully
-- Search finds known sessions
-- Session detail is readable
-- User can open workspace from a session
-- User can export a session to Markdown
-- Parser failures do not crash the extension
-
+ThreadVault has passed the initial MVP stage. The current plan is focused on public release readiness, reliability, and carefully scoped product improvements.
+
+## Current Baseline
+
+Implemented today:
+
+- Local Node.js service and static dashboard
+- SQLite persistence with FTS5 search
+- Copilot Chat, Codex, and Claude Code adapters
+- Tags, notes, regular/favorite/hidden session state
+- Markdown export and Markdown memory save
+- VS Code extension with local server lifecycle, embedded panel, browser open, logs, and rescan
+- Verification gate covering syntax, package contents, bundle sync, security checks, state/export/memory regressions, and real HTTP behavior
+
+## Release Readiness
+
+Before the first public Marketplace release:
+
+1. Replace `publisher: "local"` in `extension/package.json` with the real VS Code Marketplace Publisher ID.
+2. Confirm public GitHub URLs in `repository`, `homepage`, and `bugs`.
+3. Run `npm run prepare:extension`.
+4. Run `npm run verify`.
+5. Run `npm run package:vsix`.
+6. Install the generated VSIX and manually check the five extension commands.
+7. Confirm export and memory files are written to expected local folders.
+8. Confirm `git status --short` contains no local data, logs, SQLite files, exports, memory notes, or VSIX files.
+9. Run `npm run publish:vsce` only after the Publisher ID is configured.
+
+## Near-Term Improvements
+
+These should stay small and low-risk:
+
+- Add Marketplace and README screenshots after the UI stabilizes
+- Add an import diagnostics view for source-level parse errors
+- Add a clear empty state for users with no supported local history
+- Add optional custom source directory settings for advanced users
+- Add more HTTP-level checks when adding new API routes
+- Add fixtures for representative Copilot, Codex, and Claude history formats
+
+## Medium-Term Product Work
+
+These can happen after the first public release:
+
+- Optional scheduled or file-watcher based rescans
+- Semantic search over saved memory notes, kept fully local where practical
+- More source adapters when local history formats are readable and stable enough
+- Native VS Code tree/detail views if users prefer IDE-native navigation over the embedded dashboard
+- Better Markdown templates for memory notes and exports
+- Import quality scoring surfaced in the UI, not only stored in metadata
+
+## Engineering Guardrails
+
+- Keep the local-first privacy model as the default.
+- Do not add network dependencies to the core scanning path.
+- Keep generated local data ignored by Git.
+- Keep `npm run verify` fast enough to run before every package or publish step.
+- Prefer focused regression checks for every bug fix that touches server security, extension lifecycle, export/memory output, or annotation state.

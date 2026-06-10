@@ -27,17 +27,40 @@ function normalizeTags(tags) {
     return [];
   }
 
-  return Array.from(
-    new Set(
-      tags
-        .map((tag) => String(tag || "").trim())
-        .filter(Boolean)
-    )
-  ).slice(0, 20);
+  const normalized = [];
+  const seen = new Set();
+
+  for (const tag of tags) {
+    const text = String(tag || "").trim();
+    const key = text.toLocaleLowerCase();
+    if (!text || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalized.push(text);
+    if (normalized.length >= 20) {
+      break;
+    }
+  }
+
+  return normalized;
 }
 
 function optionalBoolean(value) {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeQuery(value) {
+  return String(value || "").trim().slice(0, 500);
+}
+
+function normalizeLimit(value, fallback = 200, maximum = 500) {
+  const limit = Number(value || fallback);
+  if (!Number.isInteger(limit) || limit <= 0) {
+    return fallback;
+  }
+  return Math.min(limit, maximum);
 }
 
 function defaultAnnotation(sessionId) {
@@ -272,6 +295,8 @@ export function listSessions({
   sourceId = ""
 } = {}) {
   const db = getDatabase();
+  const normalizedQuery = normalizeQuery(query);
+  const normalizedLimit = normalizeLimit(limit);
   const archivedClause = archivedOnly
     ? "AND COALESCE(a.archived, 0) = 1"
     : includeArchived
@@ -281,8 +306,8 @@ export function listSessions({
   const sourceClauseFts = sourceId ? "AND s.source_id = ?" : "";
   const sourceClausePlain = sourceId ? "AND sessions.source_id = ?" : "";
 
-  if (query.trim()) {
-    const ftsQuery = buildFtsQuery(query);
+  if (normalizedQuery) {
+    const ftsQuery = buildFtsQuery(normalizedQuery);
     try {
       if (!ftsQuery) {
         throw new Error("Empty FTS query.");
@@ -321,7 +346,7 @@ export function listSessions({
         ORDER BY rank
         LIMIT ?
       `);
-      const params = sourceId ? [ftsQuery, sourceId, limit] : [ftsQuery, limit];
+      const params = sourceId ? [ftsQuery, sourceId, normalizedLimit] : [ftsQuery, normalizedLimit];
       return statement.all(...params).map(deserializeSessionRow);
     } catch {
       const fallback = db.prepare(`
@@ -360,10 +385,10 @@ export function listSessions({
         ORDER BY COALESCE(sessions.updated_at, sessions.created_at) DESC
         LIMIT ?
       `);
-      const likeQuery = `%${query.trim()}%`;
+      const likeQuery = `%${normalizedQuery}%`;
       const params = sourceId
-        ? [likeQuery, likeQuery, likeQuery, likeQuery, sourceId, limit]
-        : [likeQuery, likeQuery, likeQuery, likeQuery, limit];
+        ? [likeQuery, likeQuery, likeQuery, likeQuery, sourceId, normalizedLimit]
+        : [likeQuery, likeQuery, likeQuery, likeQuery, normalizedLimit];
       return fallback.all(...params).map(deserializeSessionRow);
     }
   }
@@ -400,7 +425,7 @@ export function listSessions({
     LIMIT ?
   `);
 
-  const params = sourceId ? [sourceId, limit] : [limit];
+  const params = sourceId ? [sourceId, normalizedLimit] : [normalizedLimit];
   return statement.all(...params).map(deserializeSessionRow);
 }
 

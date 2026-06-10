@@ -17,6 +17,8 @@ Current indexed sources:
 - Codex
 - Claude Code
 
+Inside the dashboard, a session can be in exactly one state: `Regular`, `Favorite`, or `Hidden`. Hidden sessions leave the regular and Favorites views, but ThreadVault does not delete the source history file. `Export MD` creates a Markdown copy for backup or sharing, while `Save memory` writes a durable Markdown note to the configured memory directory.
+
 ## Local Development
 
 1. Open the `extension` folder in VS Code.
@@ -38,19 +40,22 @@ ThreadVault contributes these VS Code settings:
 - `threadvault.dataDirectory`: optional custom SQLite/data directory
 - `threadvault.memoryDirectory`: optional custom Markdown memory directory
 
-Keep `threadvault.host` on `127.0.0.1` unless you intentionally want to expose the local service outside your machine. If you bind to `0.0.0.0`, usually keep `threadvault.clientHost` on `127.0.0.1`.
+Keep `threadvault.host` on `127.0.0.1` unless you intentionally want to expose the local service outside your machine. Write requests are restricted to local origins plus the explicitly configured bind host. If you bind to `0.0.0.0`, usually keep `threadvault.clientHost` on `127.0.0.1`.
 For IPv6 localhost, use `::1` or `[::1]` in host settings and keep the port in `threadvault.port`.
 
 ## Packaging
 
-Before packaging a VSIX, generate the runtime app bundle from the repository root:
+From the repository root, generate the runtime app bundle and run verification:
 
 ```bash
 npm run prepare:extension
 npm run verify
+npm run package:vsix
 ```
 
-Then package from the `extension` folder. The package script runs `prepare:app` and `verify` before `vsce package`:
+The generated VSIX is written to the `extension` folder.
+
+The root package script delegates to the extension package script. If you are already inside the `extension` folder, this also works:
 
 ```bash
 npm run package:vsix
@@ -74,5 +79,7 @@ Before publishing, update at least these fields in `extension/package.json`:
 - `bugs`
 - `keywords`
 - `icon`
+- `preview`
+- `galleryBanner`
 
-Also keep `LICENSE`, `CHANGELOG.md`, and `SUPPORT.md` aligned with your public repository and release plan.
+Also keep `LICENSE`, `CHANGELOG.md`, `SUPPORT.md`, root `SECURITY.md`, and root `CONTRIBUTING.md` aligned with your public repository and release plan.

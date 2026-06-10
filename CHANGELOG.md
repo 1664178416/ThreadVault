@@ -13,3 +13,10 @@
 - Refined the UI with a cleaner activity rail, settings panel, resizable browser sidebar, and mutually exclusive All/Favorites/Hidden session filters
 - Added pre-publish verification for extension bundle sync, ignored private artifacts, Marketplace readiness warnings, and whitespace checks
 - Wired extension package/publish scripts through the verification gate
+- Added local service security headers, request timeouts, and response-stream error handling for safer browser and VS Code operation
+- Added regression checks for favorites/hidden state, Markdown export, memory saves, CORS write protection, query limits, command registration, and VSIX bundle metadata
+- Clarified VSIX installation instructions for PowerShell and documented local write-origin restrictions
+- Added SECURITY and CONTRIBUTING guidance for public GitHub release readiness
+- Clarified Regular/Favorite/Hidden state behavior and the difference between Markdown export, memory save, and copy-link actions
+- Aligned Marketplace gallery banner metadata with the current ThreadVault UI direction
+- Added bundled runtime fingerprints so same-version local VSIX installs refresh the copied extension app when bundled source changes

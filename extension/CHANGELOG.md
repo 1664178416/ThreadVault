@@ -15,3 +15,10 @@
 - Refined the embedded UI with cleaner settings, browser-open hiding outside VS Code, and mutually exclusive All/Favorites/Hidden filters
 - Added pre-publish verification for bundled app sync and private artifact ignore rules
 - Wired VSIX package and publish scripts through the verification gate
+- Added local service security headers, request timeouts, and response-stream error handling
+- Added checks for command registration, activation events, VSIX bundle metadata, and stricter publish readiness
+- Clarified VSIX output location and local write-origin restrictions in extension documentation
+- Clarified Regular/Favorite/Hidden state behavior and the difference between Markdown export and memory-save actions
+- Added public release references for SECURITY and CONTRIBUTING guidance
+- Aligned Marketplace gallery banner metadata with the current ThreadVault UI direction
+- Added bundled runtime fingerprints so same-version local VSIX installs refresh the copied app when bundled source changes

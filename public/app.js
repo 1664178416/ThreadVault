@@ -10,6 +10,9 @@ const SETTINGS = {
   }
 };
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+const SCAN_REQUEST_TIMEOUT_MS = 120000;
+
 const I18N = {
   en: {
     all: "All",
@@ -17,25 +20,27 @@ const I18N = {
     archiveAction: "Hide",
     archiveReady: "Your local archive is ready.",
     archived: "Hidden",
+    archivedTitle: "Hide this session from Regular and Favorites. The source file is not deleted.",
     assistantRole: "Assistant",
     brandEyebrow: "Local AI Archive",
     closeSettings: "Close settings",
     copyLink: "Copy link",
-    copyLinkTitle: "Copy a local link that reopens this exact session in the browser",
+    copyLinkTitle: "Copy a local browser URL that opens this exact session.",
     copying: "Copying",
     copyFailed: "Unable to copy link.",
     copySuccess: "Session link copied.",
     currentFocus: "Current focus",
     dismissNotice: "Dismiss notice",
     drawerResize: "Resize session library",
-    drawerResizeTitle: "Drag to resize the session library",
+    drawerResizeTitle: "Drag or use arrow keys to resize the session library",
     empty: "Empty",
     export: "Export MD",
-    exportTitle: "Save this session as a Markdown file in the exports folder",
+    exportTitle: "Create a Markdown copy in the exports folder for sharing or backup.",
     exportedTo: "Exported to",
     exporting: "Exporting",
     exportFailed: "Export failed.",
     favoriteAction: "Favorite",
+    favoriteTitle: "Move this session to Favorites and keep it visible.",
     favoritedAction: "Favorited",
     favorites: "Favorites",
     filters: "Filters",
@@ -48,7 +53,7 @@ const I18N = {
     memorySaved: "Saved to memory",
     messages: "messages",
     saveMemory: "Save memory",
-    saveMemoryTitle: "Save this session as a durable Markdown memory note",
+    saveMemoryTitle: "Save a reusable Markdown memory note in the memory directory.",
     openInBrowser: "Open in browser",
     opening: "Opening",
     overview: "Overview",
@@ -58,7 +63,7 @@ const I18N = {
     openSourceFailed: "Unable to open source file.",
     openWorkspaceFailed: "Unable to open workspace.",
     processRole: "Process",
-    archiveConfirm: "Hide this session? It will leave the default and Favorites views, but the source file is untouched.",
+    archiveConfirm: "Hide this session? It will leave the regular and Favorites views, but the source file is untouched.",
     noSessionSelected: "No session is selected.",
     noSessionsMatched: "Nothing matched the current view.",
     noSessions: "No sessions",
@@ -71,7 +76,9 @@ const I18N = {
     rawStream: "Raw stream",
     rescan: "Rescan",
     restoreAction: "Restore",
+    restoreTitle: "Return this session to the main list.",
     requestFailed: "Request failed",
+    requestTimedOut: "Request timed out. Check that the local ThreadVault service is still running.",
     save: "Save",
     saved: "Saved",
     saveFailed: "Annotation save failed.",
@@ -88,6 +95,8 @@ const I18N = {
     searchSessions: "Search sessions",
     selectSession: "Select a session",
     sessions: "Sessions",
+    sessionActions: "Session actions",
+    sessionState: "Session state",
     settings: "Settings",
     settingsKicker: "Appearance",
     sidebarClose: "Close session library",
@@ -97,6 +106,11 @@ const I18N = {
     sourceOpened: "Source opened.",
     sourcePath: "Source",
     sources: "Sources",
+    statusDefault: "Regular",
+    statusSavedDefault: "Set to Regular.",
+    statusSavedFavorite: "Moved to Favorites.",
+    statusSavedHidden: "Moved to Hidden. The source file was not deleted.",
+    statusDefaultTitle: "Show this session in the regular library.",
     systemRole: "System",
     tags: "Tags",
     theme: "Theme",
@@ -120,25 +134,27 @@ const I18N = {
     archiveAction: "\u9690\u85cf",
     archiveReady: "\u672c\u5730\u4f1a\u8bdd\u5f52\u6863\u5df2\u5c31\u7eea\u3002",
     archived: "\u5df2\u9690\u85cf",
+    archivedTitle: "\u4ece\u5e38\u89c4\u548c\u6536\u85cf\u89c6\u56fe\u79fb\u51fa\uff0c\u4e0d\u4f1a\u5220\u9664\u6e90\u6587\u4ef6\u3002",
     assistantRole: "\u52a9\u624b",
     brandEyebrow: "\u672c\u5730 AI \u5f52\u6863",
     closeSettings: "\u5173\u95ed\u8bbe\u7f6e",
     copyLink: "\u590d\u5236\u94fe\u63a5",
-    copyLinkTitle: "\u590d\u5236\u53ef\u5728\u6d4f\u89c8\u5668\u91cc\u76f4\u8fbe\u8fd9\u6b21\u4f1a\u8bdd\u7684\u672c\u5730\u94fe\u63a5",
+    copyLinkTitle: "\u590d\u5236\u4e00\u4e2a\u80fd\u5728\u6d4f\u89c8\u5668\u91cc\u76f4\u8fbe\u8fd9\u6b21\u4f1a\u8bdd\u7684\u672c\u5730 URL\u3002",
     copying: "\u590d\u5236\u4e2d",
     copyFailed: "\u65e0\u6cd5\u590d\u5236\u94fe\u63a5\u3002",
     copySuccess: "\u4f1a\u8bdd\u94fe\u63a5\u5df2\u590d\u5236\u3002",
     currentFocus: "\u5f53\u524d\u8303\u56f4",
     dismissNotice: "\u5173\u95ed\u901a\u77e5",
     drawerResize: "\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
-    drawerResizeTitle: "\u62d6\u52a8\u4ee5\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
+    drawerResizeTitle: "\u62d6\u52a8\u6216\u4f7f\u7528\u65b9\u5411\u952e\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
     empty: "\u7a7a",
     export: "\u5bfc\u51fa MD",
-    exportTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u4fdd\u5b58\u4e3a\u5bfc\u51fa\u76ee\u5f55\u4e2d\u7684 Markdown \u6587\u4ef6",
+    exportTitle: "\u5728\u5bfc\u51fa\u76ee\u5f55\u4e2d\u751f\u6210 Markdown \u526f\u672c\uff0c\u9002\u5408\u5206\u4eab\u6216\u5907\u4efd\u3002",
     exportedTo: "\u5df2\u5bfc\u51fa\u5230",
     exporting: "\u5bfc\u51fa\u4e2d",
     exportFailed: "\u5bfc\u51fa\u5931\u8d25\u3002",
     favoriteAction: "\u6536\u85cf",
+    favoriteTitle: "\u79fb\u5165\u6536\u85cf\uff0c\u5e76\u4fdd\u6301\u5728\u53ef\u89c1\u5217\u8868\u4e2d\u3002",
     favoritedAction: "\u5df2\u6536\u85cf",
     favorites: "\u6536\u85cf",
     filters: "\u8fc7\u6ee4",
@@ -151,7 +167,7 @@ const I18N = {
     memorySaved: "\u5df2\u6c89\u6dc0\u5230",
     messages: "\u6761\u6d88\u606f",
     saveMemory: "\u6c89\u6dc0\u8bb0\u5fc6",
-    saveMemoryTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u4fdd\u5b58\u4e3a\u53ef\u957f\u671f\u590d\u7528\u7684 Markdown \u8bb0\u5fc6",
+    saveMemoryTitle: "\u5728\u8bb0\u5fc6\u76ee\u5f55\u4e2d\u4fdd\u5b58\u53ef\u957f\u671f\u590d\u7528\u7684 Markdown \u8bb0\u5fc6\u3002",
     openInBrowser: "\u5728\u6d4f\u89c8\u5668\u6253\u5f00",
     opening: "\u6253\u5f00\u4e2d",
     overview: "\u6982\u89c8",
@@ -161,7 +177,7 @@ const I18N = {
     openSourceFailed: "\u65e0\u6cd5\u6253\u5f00\u6e90\u6587\u4ef6\u3002",
     openWorkspaceFailed: "\u65e0\u6cd5\u6253\u5f00\u5de5\u4f5c\u533a\u3002",
     processRole: "\u8fc7\u7a0b",
-    archiveConfirm: "\u9690\u85cf\u8fd9\u6b21\u4f1a\u8bdd\uff1f\u5b83\u4f1a\u4ece\u9ed8\u8ba4\u5217\u8868\u548c\u6536\u85cf\u4e2d\u79fb\u51fa\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u6e90\u6587\u4ef6\u3002",
+    archiveConfirm: "\u9690\u85cf\u8fd9\u6b21\u4f1a\u8bdd\uff1f\u5b83\u4f1a\u4ece\u5e38\u89c4\u5217\u8868\u548c\u6536\u85cf\u4e2d\u79fb\u51fa\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u6e90\u6587\u4ef6\u3002",
     noSessionSelected: "\u672a\u9009\u62e9\u4f1a\u8bdd\u3002",
     noSessionsMatched: "\u5f53\u524d\u89c6\u56fe\u6ca1\u6709\u5339\u914d\u7ed3\u679c\u3002",
     noSessions: "\u6ca1\u6709\u4f1a\u8bdd",
@@ -174,7 +190,9 @@ const I18N = {
     rawStream: "\u539f\u59cb\u6d41",
     rescan: "\u91cd\u65b0\u626b\u63cf",
     restoreAction: "\u6062\u590d",
+    restoreTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u653e\u56de\u4e3b\u5217\u8868\u3002",
     requestFailed: "\u8bf7\u6c42\u5931\u8d25",
+    requestTimedOut: "\u8bf7\u6c42\u8d85\u65f6\u3002\u8bf7\u786e\u8ba4\u672c\u5730 ThreadVault \u670d\u52a1\u4ecd\u5728\u8fd0\u884c\u3002",
     save: "\u4fdd\u5b58",
     saved: "\u5df2\u4fdd\u5b58",
     saveFailed: "\u6807\u6ce8\u4fdd\u5b58\u5931\u8d25\u3002",
@@ -191,6 +209,8 @@ const I18N = {
     searchSessions: "\u641c\u7d22\u4f1a\u8bdd",
     selectSession: "\u9009\u62e9\u4e00\u4e2a\u4f1a\u8bdd",
     sessions: "\u4f1a\u8bdd",
+    sessionActions: "\u4f1a\u8bdd\u64cd\u4f5c",
+    sessionState: "\u4f1a\u8bdd\u72b6\u6001",
     settings: "\u8bbe\u7f6e",
     settingsKicker: "\u5916\u89c2",
     sidebarClose: "\u5173\u95ed\u4f1a\u8bdd\u5e93",
@@ -200,6 +220,11 @@ const I18N = {
     sourceOpened: "\u6e90\u6587\u4ef6\u5df2\u6253\u5f00\u3002",
     sourcePath: "\u6765\u6e90",
     sources: "\u6765\u6e90",
+    statusDefault: "\u5e38\u89c4",
+    statusSavedDefault: "\u5df2\u8bbe\u4e3a\u5e38\u89c4\u3002",
+    statusSavedFavorite: "\u5df2\u79fb\u5165\u6536\u85cf\u3002",
+    statusSavedHidden: "\u5df2\u79fb\u5165\u9690\u85cf\uff0c\u6e90\u6587\u4ef6\u672a\u5220\u9664\u3002",
+    statusDefaultTitle: "\u5728\u5e38\u89c4\u4f1a\u8bdd\u5e93\u4e2d\u663e\u793a\u8fd9\u6b21\u4f1a\u8bdd\u3002",
     systemRole: "\u7cfb\u7edf",
     tags: "\u6807\u7b7e",
     theme: "\u4e3b\u9898",
@@ -228,9 +253,26 @@ function normalizeSettings(value) {
   return next;
 }
 
+function readLocalStorage(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalStorage(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function loadSavedSettings() {
   try {
-    return normalizeSettings(JSON.parse(window.localStorage.getItem(SETTINGS.storageKey) || "{}"));
+    return normalizeSettings(JSON.parse(readLocalStorage(SETTINGS.storageKey) || "{}"));
   } catch {
     return { ...SETTINGS.defaults };
   }
@@ -559,6 +601,47 @@ function normalizeAnnotationState(annotation = {}) {
   };
 }
 
+function annotationStatus(annotation = {}) {
+  const normalized = normalizeAnnotationState(annotation);
+  if (normalized.archived) {
+    return "archived";
+  }
+  if (normalized.favorite) {
+    return "favorite";
+  }
+  return "default";
+}
+
+function viewForAnnotationStatus(annotation = {}) {
+  const status = annotationStatus(annotation);
+  if (status === "favorite") {
+    return "favorites";
+  }
+  if (status === "archived") {
+    return "archived";
+  }
+  return "all";
+}
+
+function statusSavedMessage(annotation = {}) {
+  const status = annotationStatus(annotation);
+  if (status === "favorite") {
+    return t("statusSavedFavorite");
+  }
+  if (status === "archived") {
+    return t("statusSavedHidden");
+  }
+  return t("statusSavedDefault");
+}
+
+function actionStatusElement() {
+  return elements.sessionDetail.querySelector("#action-status") || elements.sessionDetail.querySelector("#annotation-status");
+}
+
+function annotationStatusElement() {
+  return elements.sessionDetail.querySelector("#annotation-status") || actionStatusElement();
+}
+
 function applyLocalizedText() {
   for (const node of document.querySelectorAll("[data-i18n]")) {
     node.textContent = t(node.getAttribute("data-i18n"));
@@ -594,7 +677,7 @@ function applySettings() {
 }
 
 function persistSettings() {
-  window.localStorage.setItem(SETTINGS.storageKey, JSON.stringify(state.settings));
+  writeLocalStorage(SETTINGS.storageKey, JSON.stringify(state.settings));
 }
 
 function setSetting(key, value) {
@@ -711,11 +794,10 @@ function sessionUrl(sessionId = state.selectedSessionId) {
 }
 
 function browserSessionUrl(sessionId = state.selectedSessionId) {
-  const url = new URL(sessionUrl(sessionId));
-  url.searchParams.delete("embed");
-  url.searchParams.delete("host");
-  url.searchParams.delete("hostToken");
-  url.searchParams.delete("v");
+  const url = new URL(window.location.pathname || "/", window.location.origin);
+  if (sessionId) {
+    url.searchParams.set("session", sessionId);
+  }
   return url.toString();
 }
 
@@ -764,7 +846,7 @@ function clamp(value, min, max) {
 }
 
 function getSavedDrawerWidth() {
-  const saved = Number(window.localStorage.getItem(LAYOUT.storageKey));
+  const saved = Number(readLocalStorage(LAYOUT.storageKey));
   if (!Number.isFinite(saved)) {
     return LAYOUT.defaultDrawerWidth;
   }
@@ -777,9 +859,10 @@ function setDrawerWidth(width, persist = true) {
   document.documentElement.style.setProperty("--drawer-width", `${nextWidth}px`);
   document.body.style.setProperty("--drawer-width", `${nextWidth}px`);
   elements.drawerResizer?.setAttribute("aria-valuenow", String(nextWidth));
+  elements.drawerResizer?.setAttribute("aria-valuetext", `${nextWidth}px`);
 
   if (persist) {
-    window.localStorage.setItem(LAYOUT.storageKey, String(nextWidth));
+    writeLocalStorage(LAYOUT.storageKey, String(nextWidth));
   }
 }
 
@@ -1059,9 +1142,42 @@ window.addEventListener("message", (event) => {
   pending.reject(new Error(payload.error || t("hostActionFailed")));
 });
 
-async function requestJson(url, options) {
-  const response = await fetch(url, options);
-  const text = await response.text();
+async function requestJson(url, options = {}) {
+  const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  let completed = false;
+
+  try {
+    response = await fetch(url, {
+      ...fetchOptions,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(t("requestTimedOut"));
+    }
+    window.clearTimeout(timeoutId);
+    completed = true;
+    throw error;
+  }
+
+  let text = "";
+  try {
+    text = await response.text();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(t("requestTimedOut"));
+    }
+    throw error;
+  } finally {
+    if (!completed) {
+      window.clearTimeout(timeoutId);
+      completed = true;
+    }
+  }
+
   let payload = {};
 
   if (text) {
@@ -1079,8 +1195,9 @@ async function requestJson(url, options) {
   return payload;
 }
 
-async function postJson(url, payload) {
+async function postJson(url, payload, options = {}) {
   return requestJson(url, {
+    ...options,
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -1630,13 +1747,8 @@ function annotationPanelHtml(tagValue, noteValue) {
 function renderSessionDetail(session) {
   delete elements.sessionDetail.dataset.actionBusy;
   const annotation = normalizeAnnotationState(session.annotation);
-  const isFavorite = Boolean(annotation.favorite);
   const isArchived = Boolean(annotation.archived);
-  const favoriteLabel = isFavorite ? t("unfavoriteAction") : t("favoriteAction");
-  const favoriteTitle = isFavorite ? t("unfavoriteAction") : t("favoriteAction");
-  const archiveLabel = isArchived ? t("restoreAction") : t("archiveAction");
-  const archiveIcon = isArchived ? "restore" : "archive";
-  const archiveTitle = archiveLabel;
+  const currentStatus = annotationStatus(annotation);
   const displayTitle = compactTitle(session.title);
   const tagValue = annotation.tags.join(", ");
   const noteValue = annotation.noteText;
@@ -1689,8 +1801,8 @@ function renderSessionDetail(session) {
         </div>
       </div>
       ${tagHtml(annotation.tags)}
-      <div class="detail-toolbar">
-        <div class="detail-actions">
+      <div class="detail-toolbar" aria-label="${escapeHtml(t("sessionActions"))}">
+        <div class="action-group action-group-open">
           <button class="secondary-button action-button" type="button" data-action="open-source" title="${escapeHtml(t("sourceFile"))}">
             ${iconSlot("openSource")}
             <span>${escapeHtml(t("source"))}</span>
@@ -1699,14 +1811,22 @@ function renderSessionDetail(session) {
             ${iconSlot("workspace")}
             <span>${escapeHtml(t("workspace"))}</span>
           </button>
-          <button class="ghost-button action-button ${isFavorite ? "is-favorite" : ""}" type="button" data-action="favorite-toggle" title="${escapeHtml(favoriteTitle)}">
-            ${iconSlot(isFavorite ? "favoriteFilled" : "favorite")}
-            <span>${escapeHtml(favoriteLabel)}</span>
+        </div>
+        <div class="action-group action-group-state" role="radiogroup" aria-label="${escapeHtml(t("sessionState"))}">
+          <button class="state-button action-button ${currentStatus === "default" ? "is-active" : ""}" type="button" data-action="state-default" role="radio" aria-checked="${currentStatus === "default" ? "true" : "false"}" title="${escapeHtml(t("statusDefaultTitle"))}">
+            ${iconSlot("status")}
+            <span>${escapeHtml(t("statusDefault"))}</span>
           </button>
-          <button class="ghost-button action-button ${isArchived ? "is-hidden" : ""}" type="button" data-action="archive-toggle" title="${escapeHtml(archiveTitle)}">
-            ${iconSlot(archiveIcon)}
-            <span>${escapeHtml(archiveLabel)}</span>
+          <button class="state-button action-button ${currentStatus === "favorite" ? "is-active is-favorite" : ""}" type="button" data-action="state-favorite" role="radio" aria-checked="${currentStatus === "favorite" ? "true" : "false"}" title="${escapeHtml(t("favoriteTitle"))}">
+            ${iconSlot(currentStatus === "favorite" ? "favoriteFilled" : "favorite")}
+            <span>${escapeHtml(t("favoriteAction"))}</span>
           </button>
+          <button class="state-button action-button ${currentStatus === "archived" ? "is-active is-hidden" : ""}" type="button" data-action="state-archived" role="radio" aria-checked="${currentStatus === "archived" ? "true" : "false"}" title="${escapeHtml(t("archivedTitle"))}">
+            ${iconSlot("archive")}
+            <span>${escapeHtml(t("archiveAction"))}</span>
+          </button>
+        </div>
+        <div class="action-group action-group-output">
           <button class="ghost-button action-button" type="button" data-action="export-markdown" title="${escapeHtml(t("exportTitle"))}">
             ${iconSlot("export")}
             <span>${escapeHtml(t("export"))}</span>
@@ -1721,6 +1841,7 @@ function renderSessionDetail(session) {
           </button>
         </div>
       </div>
+      <div class="inline-status detail-action-status" id="action-status" aria-live="polite"></div>
       ${annotationPanelHtml(tagValue, noteValue)}
     </header>
     <section class="detail-body">
@@ -1735,14 +1856,37 @@ function renderSessionDetail(session) {
     </section>
   `;
 
-  elements.sessionDetail.querySelector("#save-note-button")?.addEventListener("click", async () => {
-    const tags = elements.sessionDetail.querySelector("#tag-input").value
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-    const noteText = elements.sessionDetail.querySelector("#note-input").value;
-    await saveAnnotation(session.id, { tags, noteText });
-    showToast(`${t("saved")}.`, "success");
+  elements.sessionDetail.querySelector("#save-note-button")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const label = button.querySelector("span:last-child");
+    const originalLabel = label?.textContent || t("save");
+
+    try {
+      button.disabled = true;
+      if (label) {
+        label.textContent = t("saving");
+      }
+
+      const tags = elements.sessionDetail.querySelector("#tag-input").value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      const noteText = elements.sessionDetail.querySelector("#note-input").value;
+      await saveAnnotation(session.id, { tags, noteText });
+      showToast(`${t("saved")}.`, "success");
+    } catch (error) {
+      const message = String(error.message || error);
+      const status = annotationStatusElement();
+      if (status) {
+        status.textContent = message;
+      }
+      showToast(message, "warning");
+    } finally {
+      button.disabled = false;
+      if (label) {
+        label.textContent = originalLabel;
+      }
+    }
   });
 
   const messageById = new Map((session.messages || []).map((message) => [message.id, message]));
@@ -1772,7 +1916,7 @@ function renderSessionDetail(session) {
       return;
     }
 
-    const status = elements.sessionDetail.querySelector("#annotation-status");
+    const status = actionStatusElement();
     const action = button.getAttribute("data-action");
     const originalLabel = button.querySelector("span:last-child")?.textContent || "";
 
@@ -1864,23 +2008,53 @@ function renderSessionDetail(session) {
       return;
     }
 
-    if (action === "favorite-toggle") {
+    if (action === "state-default") {
+      if (currentStatus === "default") {
+        return;
+      }
+
       try {
-        const nextFavorite = !isFavorite;
         setBusy(t("saving"));
-        await saveAnnotation(session.id, {
-          favorite: nextFavorite,
-          ...(nextFavorite ? { archived: false } : {})
+        const nextAnnotation = await saveAnnotation(session.id, {
+          favorite: false,
+          archived: false
         });
-        showToast(`${t("saved")}.`, "success");
+        const message = statusSavedMessage(nextAnnotation);
+        showToast(message, "success");
       } catch (error) {
-        resetBusy();
         showToast(String(error.message || error), "warning");
+      } finally {
+        resetBusy();
       }
       return;
     }
 
-    if (action === "archive-toggle") {
+    if (action === "state-favorite") {
+      if (currentStatus === "favorite") {
+        return;
+      }
+
+      try {
+        setBusy(t("saving"));
+        const nextAnnotation = await saveAnnotation(session.id, {
+          favorite: true,
+          archived: false
+        });
+        const message = statusSavedMessage(nextAnnotation);
+        showToast(message, "success");
+      } catch (error) {
+        showToast(String(error.message || error), "warning");
+      } finally {
+        resetBusy();
+      }
+      return;
+    }
+
+    if (action === "state-archived") {
+      if (currentStatus === "archived") {
+        return;
+      }
+
       if (!isArchived) {
         const confirmed = window.confirm(t("archiveConfirm"));
         if (!confirmed) {
@@ -1890,14 +2064,16 @@ function renderSessionDetail(session) {
 
       try {
         setBusy(t("saving"));
-        await saveAnnotation(session.id, {
-          archived: !isArchived,
-          ...(!isArchived ? { favorite: false } : {})
+        const nextAnnotation = await saveAnnotation(session.id, {
+          favorite: false,
+          archived: true
         });
-        showToast(`${t("saved")}.`, "success");
+        const message = statusSavedMessage(nextAnnotation);
+        showToast(message, "success");
       } catch (error) {
-        resetBusy();
         showToast(String(error.message || error), "warning");
+      } finally {
+        resetBusy();
       }
       return;
     }
@@ -2045,11 +2221,12 @@ async function loadSessions() {
 }
 
 async function saveAnnotation(sessionId, payload) {
-  const status = elements.sessionDetail.querySelector("#annotation-status");
+  const status = annotationStatusElement();
   if (status) {
     status.textContent = `${t("saving")}...`;
   }
 
+  const isStateChange = Object.prototype.hasOwnProperty.call(payload, "favorite") || Object.prototype.hasOwnProperty.call(payload, "archived");
   const result = await postJson("/api/session-meta", {
     sessionId,
     ...payload
@@ -2059,12 +2236,20 @@ async function saveAnnotation(sessionId, payload) {
     throw new Error(result.error || t("saveFailed"));
   }
 
+  const annotation = normalizeAnnotationState(result.annotation);
+  if (isStateChange) {
+    setStatusView(viewForAnnotationStatus(annotation));
+    state.selectedSessionId = sessionId;
+  }
+
   await loadSessions();
 
-  const nextStatus = elements.sessionDetail.querySelector("#annotation-status");
+  const nextStatus = isStateChange ? actionStatusElement() : annotationStatusElement();
   if (nextStatus) {
-    nextStatus.textContent = `${t("saved")}.`;
+    nextStatus.textContent = isStateChange ? statusSavedMessage(annotation) : `${t("saved")}.`;
   }
+
+  return annotation;
 }
 
 async function selectSession(sessionId, rerenderList = true, syncUrl = true) {
@@ -2088,7 +2273,10 @@ async function runScan() {
   elements.scanButton.disabled = true;
   setButtonLabel(elements.scanButton, t("scanning"));
   try {
-    const result = await requestJson("/api/scan", { method: "POST" });
+    const result = await requestJson("/api/scan", {
+      method: "POST",
+      timeoutMs: SCAN_REQUEST_TIMEOUT_MS
+    });
     await loadSessions();
     const status = [
       `${t("scanImported")} ${result.importedSessions || 0}`,

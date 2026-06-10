@@ -3,6 +3,17 @@ import fs from "node:fs";
 
 import { getSessionDetail } from "../db/repository.js";
 
+const VALID_TARGETS = new Set(["source", "workspace"]);
+
+function codeCommandError(error) {
+  const details = error?.message || String(error || "Unknown error");
+  if (error?.code === "ENOENT") {
+    return "Unable to launch VS Code with the code command. Install the VS Code shell command or use the embedded VS Code panel open actions.";
+  }
+
+  return `Unable to launch VS Code with the code command: ${details}`;
+}
+
 function launchCode(args) {
   return new Promise((resolve) => {
     const child = childProcess.spawn("code", args, {
@@ -22,7 +33,7 @@ function launchCode(args) {
     child.once("error", (error) => {
       settle({
         ok: false,
-        error: `Unable to launch VS Code with the code command: ${error.message || error}`
+        error: codeCommandError(error)
       });
     });
 
@@ -46,6 +57,13 @@ function pathForSessionTarget(session, target) {
 }
 
 export async function openSessionTargetInVsCode(sessionId, target) {
+  if (!VALID_TARGETS.has(target)) {
+    return {
+      ok: false,
+      error: "Open target must be source or workspace."
+    };
+  }
+
   const session = getSessionDetail(sessionId);
   if (!session) {
     return {

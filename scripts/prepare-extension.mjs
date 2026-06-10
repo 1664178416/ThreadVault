@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -7,6 +8,34 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const targetRoot = path.join(projectRoot, "extension", "app");
 const sourceEntries = ["src", "public"];
+
+function listFilesRecursive(rootPath) {
+  const files = [];
+  for (const entry of fs.readdirSync(rootPath, { withFileTypes: true })) {
+    const entryPath = path.join(rootPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listFilesRecursive(entryPath));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+  return files.sort((a, b) => a.localeCompare(b));
+}
+
+function bundleFingerprint() {
+  const hash = crypto.createHash("sha256");
+  for (const entryName of sourceEntries) {
+    const sourcePath = path.join(projectRoot, entryName);
+    for (const filePath of listFilesRecursive(sourcePath)) {
+      const relativePath = path.relative(projectRoot, filePath).replaceAll(path.sep, "/");
+      hash.update(relativePath);
+      hash.update("\0");
+      hash.update(fs.readFileSync(filePath));
+      hash.update("\0");
+    }
+  }
+  return hash.digest("hex");
+}
 
 function resetDirectory(targetPath) {
   fs.rmSync(targetPath, { recursive: true, force: true });
@@ -29,7 +58,7 @@ fs.writeFileSync(
   path.join(targetRoot, ".threadvault-bundle.json"),
   JSON.stringify(
     {
-      generatedAt: new Date().toISOString(),
+      fingerprint: bundleFingerprint(),
       sourceEntries
     },
     null,

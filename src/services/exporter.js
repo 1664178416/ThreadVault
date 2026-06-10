@@ -141,13 +141,14 @@ function renderAnnotation(annotation) {
   return lines.join("\n");
 }
 
-function buildMarkdown(session) {
+function buildMarkdown(session, action = "export") {
   const sourcePath = markdownListValue(session.sourcePath);
   const lines = [
     `# ${markdownHeading(session.title)}`,
     "",
     "> Exported from ThreadVault. This file may contain private prompts, paths, notes, and transcripts.",
     "",
+    "- ThreadVault action: " + markdownListValue(action),
     "- Source: " + markdownListValue(session.sourceLabel),
     "- Source session id: " + markdownListValue(session.sourceSessionId),
     "- Source path: " + sourcePath,
@@ -200,7 +201,7 @@ export function exportSessionToMarkdown(sessionId) {
   ensureDir(EXPORT_DIR);
   const fileName = sessionFileName(session);
   const exportPath = uniqueMarkdownPath(EXPORT_DIR, fileName);
-  writeText(exportPath, buildMarkdown(session));
+  writeText(exportPath, buildMarkdown(session, "export"));
 
   return {
     ok: true,
@@ -225,7 +226,7 @@ export function saveSessionToMemory(sessionId) {
   const fileName = sessionFileName(session);
   const memoryDir = ensureInsideDirectory(MEMORY_DIR, path.join(MEMORY_DIR, dateDir, sourceDir, workspaceDir));
   const memoryPath = uniqueMarkdownPath(memoryDir, fileName);
-  writeText(memoryPath, buildMarkdown(session));
+  writeText(memoryPath, buildMarkdown(session, "memory"));
 
   return {
     ok: true,

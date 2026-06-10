@@ -10,13 +10,16 @@ const extensionPackage = require("./package.json");
 const DEFAULT_PORT = 3187;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_CLIENT_HOST = "127.0.0.1";
+const HEALTH_APP_NAME = "ThreadVault";
 const MIN_NODE_MAJOR = 24;
 const RUNTIME_APP_DIRNAME = "runtime-app";
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 let serverProcess = null;
 let outputChannel = null;
 let serverConfigKey = "";
 let lastServerError = "";
+const intentionalServerStops = new WeakSet();
 
 class ActionItem extends vscode.TreeItem {
   constructor(label, command, description) {
@@ -86,6 +89,36 @@ function setServerError(message) {
   logLine(message);
 }
 
+function errorMessage(error) {
+  return error?.message || String(error || "Unknown error");
+}
+
+function runCommandSafely(label, callback) {
+  return async () => {
+    try {
+      await callback();
+    } catch (error) {
+      const message = `${label} failed: ${errorMessage(error)}`;
+      setServerError(message);
+      outputChannel?.show(true);
+      vscode.window.showErrorMessage(message);
+    }
+  };
+}
+
+function rememberServerStderr(text) {
+  if (!text) {
+    return;
+  }
+
+  if (/could not start|server failed|EADDRINUSE|listen EADDRINUSE/i.test(text)) {
+    setServerError(text);
+    return;
+  }
+
+  logLine(text);
+}
+
 function extensionConfig() {
   return vscode.workspace.getConfiguration("threadvault");
 }
@@ -99,6 +132,12 @@ function normalizeHostSetting(value, fallback, settingName) {
   const text = String(value || "").trim();
   if (!text) {
     return fallback;
+  }
+
+  const bracketless = text.replace(/^\[(.*)\]$/, "$1");
+  const maybeBareIpv6 = bracketless.split(":").length > 2;
+  if (!text.includes("://") && maybeBareIpv6 && /^[0-9a-f:.]+$/i.test(bracketless)) {
+    return bracketless;
   }
 
   try {
@@ -173,6 +212,16 @@ function hasAppFiles(rootPath) {
   return fs.existsSync(path.join(rootPath, "src", "server.js")) && fs.existsSync(path.join(rootPath, "public", "app.js"));
 }
 
+function readBundleFingerprint(rootPath) {
+  try {
+    const metadataPath = path.join(rootPath, ".threadvault-bundle.json");
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+    return typeof metadata.fingerprint === "string" ? metadata.fingerprint : "";
+  } catch {
+    return "";
+  }
+}
+
 function developmentAppRoot(context) {
   return path.resolve(context.extensionPath, "..");
 }
@@ -212,10 +261,12 @@ function ensureRuntimeApp(context) {
   const versionFile = path.join(targetRoot, ".threadvault-version");
   const bundledVersion = extensionPackage.version;
   const currentVersion = fs.existsSync(versionFile) ? fs.readFileSync(versionFile, "utf8").trim() : "";
+  const bundledFingerprint = readBundleFingerprint(bundledRoot);
+  const currentFingerprint = readBundleFingerprint(targetRoot);
 
   fs.mkdirSync(storageRoot, { recursive: true });
 
-  if (!hasAppFiles(targetRoot) || currentVersion !== bundledVersion) {
+  if (!hasAppFiles(targetRoot) || currentVersion !== bundledVersion || currentFingerprint !== bundledFingerprint) {
     fs.rmSync(targetRoot, { recursive: true, force: true });
     fs.mkdirSync(targetRoot, { recursive: true });
     fs.cpSync(bundledRoot, targetRoot, { recursive: true });
@@ -277,10 +328,20 @@ function checkNodeRuntime() {
   };
 }
 
-function request(method, route) {
+function request(method, route, options = {}) {
   const port = configuredPort();
   const host = configuredClientHost();
+  const timeoutMs = options.timeoutMs || 2500;
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(value);
+    };
+
     const req = http.request(
       {
         hostname: host,
@@ -290,20 +351,43 @@ function request(method, route) {
       },
       (res) => {
         let body = "";
+        let receivedBytes = 0;
+        res.setTimeout(timeoutMs, () => {
+          req.destroy(new Error(`ThreadVault response timed out after ${timeoutMs}ms.`));
+        });
         res.on("data", (chunk) => {
+          receivedBytes += chunk.length;
+          if (receivedBytes > MAX_RESPONSE_BYTES) {
+            req.destroy(new Error("ThreadVault response body is too large."));
+            return;
+          }
+
           body += chunk.toString();
         });
+        res.on("error", (error) => settle(reject, error));
         res.on("end", () => {
+          let payload = {};
           try {
-            resolve(JSON.parse(body || "{}"));
+            payload = JSON.parse(body || "{}");
           } catch (error) {
-            reject(error);
+            settle(reject, new Error(`ThreadVault returned invalid JSON (${res.statusCode || 0}): ${body || error.message}`));
+            return;
           }
+
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            settle(reject, new Error(payload.error || `ThreadVault request failed with status ${res.statusCode}.`));
+            return;
+          }
+
+          settle(resolve, payload);
         });
       }
     );
 
-    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`ThreadVault request timed out after ${timeoutMs}ms.`));
+    });
+    req.on("error", (error) => settle(reject, error));
     req.end();
   });
 }
@@ -318,6 +402,7 @@ function stopServerProcess(reason = "Stopping local server.") {
 
   logLine(reason);
   return new Promise((resolve) => {
+    intentionalServerStops.add(processToStop);
     const timeout = setTimeout(() => {
       logLine("Timed out waiting for the local server to stop.");
       resolve();
@@ -337,7 +422,15 @@ function stopServerProcess(reason = "Stopping local server.") {
 async function isServerReady() {
   try {
     const payload = await request("GET", "/api/health");
-    return Boolean(payload.ok);
+    const ready = Boolean(
+      payload.ok &&
+      payload.app === HEALTH_APP_NAME &&
+      Number(payload.port) === configuredPort()
+    );
+    if (!ready && payload.ok) {
+      logLine(`Ignoring unexpected health response on ${dashboardBaseUrl()}: ${JSON.stringify(payload)}`);
+    }
+    return ready;
   } catch {
     return false;
   }
@@ -372,7 +465,7 @@ async function ensureServer(context) {
     logLine(`Using data directory ${runtime.dataDir}`);
     logLine(`Using memory directory ${runtime.memoryDir}`);
 
-    serverProcess = childProcess.spawn(nodeRuntime.nodePath, [serverEntry(runtime.root)], {
+    const launchedProcess = childProcess.spawn(nodeRuntime.nodePath, [serverEntry(runtime.root)], {
       cwd: runtime.root,
       env: {
         ...process.env,
@@ -385,30 +478,39 @@ async function ensureServer(context) {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });
+    serverProcess = launchedProcess;
     serverConfigKey = nextConfigKey;
 
-    serverProcess.stdout?.on("data", (chunk) => {
+    launchedProcess.stdout?.on("data", (chunk) => {
       const text = chunk.toString().trim();
       if (text) {
         logLine(text);
       }
     });
 
-    serverProcess.stderr?.on("data", (chunk) => {
+    launchedProcess.stderr?.on("data", (chunk) => {
       const text = chunk.toString().trim();
-      if (text) {
-        logLine(text);
+      rememberServerStderr(text);
+    });
+
+    launchedProcess.on("exit", (code, signal) => {
+      if (intentionalServerStops.has(launchedProcess)) {
+        logLine(`Server stopped with code=${code ?? "null"} signal=${signal ?? "null"}`);
+        intentionalServerStops.delete(launchedProcess);
+      } else {
+        setServerError(`Server exited with code=${code ?? "null"} signal=${signal ?? "null"}`);
+      }
+
+      if (serverProcess === launchedProcess) {
+        serverProcess = null;
+        serverConfigKey = "";
       }
     });
 
-    serverProcess.on("exit", (code, signal) => {
-      setServerError(`Server exited with code=${code ?? "null"} signal=${signal ?? "null"}`);
-      serverProcess = null;
-      serverConfigKey = "";
-    });
-
-    serverProcess.on("error", (error) => {
-      setServerError(`Server failed to start: ${error.message}`);
+    launchedProcess.on("error", (error) => {
+      if (serverProcess === launchedProcess) {
+        setServerError(`Server failed to start: ${error.message}`);
+      }
     });
   }
 
@@ -566,7 +668,18 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("threadvault.startServer", async () => {
+    vscode.workspace.onDidChangeConfiguration(async (event) => {
+      if (!event.affectsConfiguration("threadvault")) {
+        return;
+      }
+
+      lastServerError = "";
+      await stopServerProcess("ThreadVault settings changed. Restarting the local server on next use.");
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("threadvault.startServer", runCommandSafely("Start local server", async () => {
       const ok = await ensureServer(context);
       if (ok) {
         outputChannel.show(true);
@@ -575,11 +688,11 @@ function activate(context) {
         outputChannel.show(true);
         vscode.window.showErrorMessage(lastServerError || "ThreadVault server did not start in time.");
       }
-    })
+    }))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("threadvault.openDashboard", async () => {
+    vscode.commands.registerCommand("threadvault.openDashboard", runCommandSafely("Open dashboard in browser", async () => {
       const ok = await ensureServer(context);
       if (!ok) {
         outputChannel.show(true);
@@ -587,11 +700,11 @@ function activate(context) {
         return;
       }
       await vscode.env.openExternal(vscode.Uri.parse(dashboardBaseUrl()));
-    })
+    }))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("threadvault.openPanel", async () => {
+    vscode.commands.registerCommand("threadvault.openPanel", runCommandSafely("Open embedded panel", async () => {
       const ok = await ensureServer(context);
       if (!ok) {
         outputChannel.show(true);
@@ -653,18 +766,18 @@ function activate(context) {
           });
         }
       });
-    })
+    }))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("threadvault.openLogs", async () => {
+    vscode.commands.registerCommand("threadvault.openLogs", runCommandSafely("Open logs", async () => {
       outputChannel.show(true);
       logLine("Opened ThreadVault log channel.");
-    })
+    }))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("threadvault.rescan", async () => {
+    vscode.commands.registerCommand("threadvault.rescan", runCommandSafely("Rescan local history", async () => {
       const ok = await ensureServer(context);
       if (!ok) {
         outputChannel.show(true);
@@ -672,19 +785,19 @@ function activate(context) {
         return;
       }
 
-      const result = await request("POST", "/api/scan");
+      const result = await request("POST", "/api/scan", { timeoutMs: 120000 });
       const message = `ThreadVault rescan completed. Imported ${result.importedSessions || 0}, updated ${result.updatedSessions || 0}, skipped ${result.skippedSessions || 0}, failed ${result.failedSessions || 0}, source errors ${result.failedSources || 0}.`;
       if (result.failedSessions || result.failedSources) {
         vscode.window.showWarningMessage(message);
       } else {
         vscode.window.showInformationMessage(message);
       }
-    })
+    }))
   );
 }
 
 function deactivate() {
-  stopServerProcess("Stopping ThreadVault local server.");
+  return stopServerProcess("Stopping ThreadVault local server.");
 }
 
 module.exports = {
