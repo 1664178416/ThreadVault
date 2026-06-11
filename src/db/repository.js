@@ -556,10 +556,10 @@ export function updateSessionAnnotation(sessionId, updates = {}) {
   let nextFavorite = updateFavorite ?? current.favorite;
   let nextArchived = updateArchived ?? current.archived;
 
-  if (updateFavorite === true) {
-    nextArchived = false;
-  } else if (updateArchived === true) {
+  if (updateArchived === true) {
     nextFavorite = false;
+  } else if (updateFavorite === true) {
+    nextArchived = false;
   }
 
   const next = {

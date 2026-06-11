@@ -17,7 +17,7 @@ Current indexed sources:
 - Codex
 - Claude Code
 
-Inside the dashboard, a session can be in exactly one state: `Regular`, `Favorite`, or `Hidden`. Hidden sessions leave the regular and Favorites views, but ThreadVault does not delete the source history file. `Export MD` creates a Markdown copy for backup or sharing, while `Save memory` writes a durable Markdown note to the configured memory directory.
+Inside the dashboard, a session can be in exactly one state: `Regular`, `Favorite`, or `Hidden`. Hidden sessions leave the regular and Favorites views, but ThreadVault does not delete the source history file. `Export MD` creates a Markdown copy for backup or sharing, `Save memory` writes a durable Markdown note to the configured memory directory, and `Copy local link` copies a local-only URL for the selected session.
 
 ## Local Development
 

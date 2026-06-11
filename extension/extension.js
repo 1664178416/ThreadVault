@@ -604,11 +604,11 @@ function browserDashboardUrl(candidateUrl) {
       return baseUrl.toString();
     }
 
-    parsedUrl.searchParams.delete("embed");
-    parsedUrl.searchParams.delete("host");
-    parsedUrl.searchParams.delete("hostToken");
-    parsedUrl.searchParams.delete("v");
-    return parsedUrl.toString();
+    const sessionId = parsedUrl.searchParams.get("session") || "";
+    if (sessionId) {
+      baseUrl.searchParams.set("session", sessionId);
+    }
+    return baseUrl.toString();
   } catch {
     return baseUrl.toString();
   }

@@ -17,18 +17,17 @@ const I18N = {
   en: {
     all: "All",
     allSources: "All sources",
-    archiveAction: "Hide",
     archiveReady: "Your local archive is ready.",
     archived: "Hidden",
-    archivedTitle: "Hide this session from Regular and Favorites. The source file is not deleted.",
+    archivedTitle: "Move this session to Hidden. It will leave Regular and Favorites, but the source history file is not deleted.",
     assistantRole: "Assistant",
     brandEyebrow: "Local AI Archive",
     closeSettings: "Close settings",
-    copyLink: "Copy link",
-    copyLinkTitle: "Copy a local browser URL that opens this exact session.",
+    copyLink: "Copy local link",
+    copyLinkTitle: "Copy a local ThreadVault URL that opens this exact session on this machine.",
     copying: "Copying",
     copyFailed: "Unable to copy link.",
-    copySuccess: "Session link copied.",
+    copySuccess: "Local session link copied.",
     currentFocus: "Current focus",
     dismissNotice: "Dismiss notice",
     drawerResize: "Resize session library",
@@ -40,7 +39,7 @@ const I18N = {
     exporting: "Exporting",
     exportFailed: "Export failed.",
     favoriteAction: "Favorite",
-    favoriteTitle: "Move this session to Favorites and keep it visible.",
+    favoriteTitle: "Set this session to Favorite. It stays visible and appears in Favorites.",
     favoritedAction: "Favorited",
     favorites: "Favorites",
     filters: "Filters",
@@ -53,7 +52,7 @@ const I18N = {
     memorySaved: "Saved to memory",
     messages: "messages",
     saveMemory: "Save memory",
-    saveMemoryTitle: "Save a reusable Markdown memory note in the memory directory.",
+    saveMemoryTitle: "Save this session as a reusable Markdown memory note in the configured memory directory.",
     openInBrowser: "Open in browser",
     opening: "Opening",
     overview: "Overview",
@@ -62,8 +61,11 @@ const I18N = {
     hostTimeout: "Timed out waiting for VS Code host response.",
     openSourceFailed: "Unable to open source file.",
     openWorkspaceFailed: "Unable to open workspace.",
+    openActions: "Open",
+    outputActions: "Output",
+    outputActionsHelp: "Export MD writes a Markdown copy, Save memory writes a reusable memory note, and Copy local link copies a local URL.",
     processRole: "Process",
-    archiveConfirm: "Hide this session? It will leave the regular and Favorites views, but the source file is untouched.",
+    hideAction: "Hide",
     noSessionSelected: "No session is selected.",
     noSessionsMatched: "Nothing matched the current view.",
     noSessions: "No sessions",
@@ -97,6 +99,7 @@ const I18N = {
     sessions: "Sessions",
     sessionActions: "Session actions",
     sessionState: "Session state",
+    sessionStateHelp: "The session can be in exactly one state: Regular, Favorite, or Hidden.",
     settings: "Settings",
     settingsKicker: "Appearance",
     sidebarClose: "Close session library",
@@ -107,9 +110,11 @@ const I18N = {
     sourcePath: "Source",
     sources: "Sources",
     statusDefault: "Regular",
+    statusFavorite: "Favorite",
+    statusHidden: "Hidden",
     statusSavedDefault: "Set to Regular.",
     statusSavedFavorite: "Moved to Favorites.",
-    statusSavedHidden: "Moved to Hidden. The source file was not deleted.",
+    statusSavedHidden: "Moved to Hidden and removed from Favorites. Restore it from the Hidden view.",
     statusDefaultTitle: "Show this session in the regular library.",
     systemRole: "System",
     tags: "Tags",
@@ -131,18 +136,17 @@ const I18N = {
   zh: {
     all: "\u5168\u90e8",
     allSources: "\u5168\u90e8\u6765\u6e90",
-    archiveAction: "\u9690\u85cf",
     archiveReady: "\u672c\u5730\u4f1a\u8bdd\u5f52\u6863\u5df2\u5c31\u7eea\u3002",
     archived: "\u5df2\u9690\u85cf",
-    archivedTitle: "\u4ece\u5e38\u89c4\u548c\u6536\u85cf\u89c6\u56fe\u79fb\u51fa\uff0c\u4e0d\u4f1a\u5220\u9664\u6e90\u6587\u4ef6\u3002",
+    archivedTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u79fb\u5230\u9690\u85cf\u72b6\u6001\uff0c\u5b83\u4f1a\u79bb\u5f00\u5e38\u89c4\u548c\u6536\u85cf\u89c6\u56fe\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u6e90\u5386\u53f2\u6587\u4ef6\u3002",
     assistantRole: "\u52a9\u624b",
     brandEyebrow: "\u672c\u5730 AI \u5f52\u6863",
     closeSettings: "\u5173\u95ed\u8bbe\u7f6e",
-    copyLink: "\u590d\u5236\u94fe\u63a5",
-    copyLinkTitle: "\u590d\u5236\u4e00\u4e2a\u80fd\u5728\u6d4f\u89c8\u5668\u91cc\u76f4\u8fbe\u8fd9\u6b21\u4f1a\u8bdd\u7684\u672c\u5730 URL\u3002",
+    copyLink: "\u590d\u5236\u672c\u5730\u94fe\u63a5",
+    copyLinkTitle: "\u590d\u5236\u4e00\u4e2a\u53ea\u5728\u672c\u673a ThreadVault \u53ef\u7528\u7684\u4f1a\u8bdd URL\uff0c\u53ef\u76f4\u8fbe\u8fd9\u6b21\u4f1a\u8bdd\u3002",
     copying: "\u590d\u5236\u4e2d",
     copyFailed: "\u65e0\u6cd5\u590d\u5236\u94fe\u63a5\u3002",
-    copySuccess: "\u4f1a\u8bdd\u94fe\u63a5\u5df2\u590d\u5236\u3002",
+    copySuccess: "\u672c\u5730\u4f1a\u8bdd\u94fe\u63a5\u5df2\u590d\u5236\u3002",
     currentFocus: "\u5f53\u524d\u8303\u56f4",
     dismissNotice: "\u5173\u95ed\u901a\u77e5",
     drawerResize: "\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
@@ -154,7 +158,7 @@ const I18N = {
     exporting: "\u5bfc\u51fa\u4e2d",
     exportFailed: "\u5bfc\u51fa\u5931\u8d25\u3002",
     favoriteAction: "\u6536\u85cf",
-    favoriteTitle: "\u79fb\u5165\u6536\u85cf\uff0c\u5e76\u4fdd\u6301\u5728\u53ef\u89c1\u5217\u8868\u4e2d\u3002",
+    favoriteTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u8bbe\u4e3a\u6536\u85cf\u72b6\u6001\uff0c\u5b83\u4f1a\u4fdd\u6301\u53ef\u89c1\u5e76\u51fa\u73b0\u5728\u6536\u85cf\u89c6\u56fe\u4e2d\u3002",
     favoritedAction: "\u5df2\u6536\u85cf",
     favorites: "\u6536\u85cf",
     filters: "\u8fc7\u6ee4",
@@ -167,7 +171,7 @@ const I18N = {
     memorySaved: "\u5df2\u6c89\u6dc0\u5230",
     messages: "\u6761\u6d88\u606f",
     saveMemory: "\u6c89\u6dc0\u8bb0\u5fc6",
-    saveMemoryTitle: "\u5728\u8bb0\u5fc6\u76ee\u5f55\u4e2d\u4fdd\u5b58\u53ef\u957f\u671f\u590d\u7528\u7684 Markdown \u8bb0\u5fc6\u3002",
+    saveMemoryTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u4fdd\u5b58\u4e3a\u53ef\u957f\u671f\u590d\u7528\u7684 Markdown \u8bb0\u5fc6\uff0c\u5199\u5165\u5df2\u914d\u7f6e\u7684\u8bb0\u5fc6\u76ee\u5f55\u3002",
     openInBrowser: "\u5728\u6d4f\u89c8\u5668\u6253\u5f00",
     opening: "\u6253\u5f00\u4e2d",
     overview: "\u6982\u89c8",
@@ -176,8 +180,11 @@ const I18N = {
     hostTimeout: "\u7b49\u5f85 VS Code \u5bbf\u4e3b\u54cd\u5e94\u8d85\u65f6\u3002",
     openSourceFailed: "\u65e0\u6cd5\u6253\u5f00\u6e90\u6587\u4ef6\u3002",
     openWorkspaceFailed: "\u65e0\u6cd5\u6253\u5f00\u5de5\u4f5c\u533a\u3002",
+    openActions: "\u6253\u5f00",
+    outputActions: "\u8f93\u51fa",
+    outputActionsHelp: "\u5bfc\u51fa MD \u4f1a\u5199\u5165 Markdown \u526f\u672c\uff0c\u6c89\u6dc0\u8bb0\u5fc6\u4f1a\u5199\u5165\u53ef\u590d\u7528\u7684\u8bb0\u5fc6\u7b14\u8bb0\uff0c\u590d\u5236\u672c\u5730\u94fe\u63a5\u4f1a\u590d\u5236\u672c\u673a URL\u3002",
     processRole: "\u8fc7\u7a0b",
-    archiveConfirm: "\u9690\u85cf\u8fd9\u6b21\u4f1a\u8bdd\uff1f\u5b83\u4f1a\u4ece\u5e38\u89c4\u5217\u8868\u548c\u6536\u85cf\u4e2d\u79fb\u51fa\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u6e90\u6587\u4ef6\u3002",
+    hideAction: "\u9690\u85cf",
     noSessionSelected: "\u672a\u9009\u62e9\u4f1a\u8bdd\u3002",
     noSessionsMatched: "\u5f53\u524d\u89c6\u56fe\u6ca1\u6709\u5339\u914d\u7ed3\u679c\u3002",
     noSessions: "\u6ca1\u6709\u4f1a\u8bdd",
@@ -211,6 +218,7 @@ const I18N = {
     sessions: "\u4f1a\u8bdd",
     sessionActions: "\u4f1a\u8bdd\u64cd\u4f5c",
     sessionState: "\u4f1a\u8bdd\u72b6\u6001",
+    sessionStateHelp: "\u53ea\u80fd\u9009\u62e9\u4e00\u79cd\u72b6\u6001\uff1a\u5e38\u89c4\u3001\u6536\u85cf\u6216\u9690\u85cf\u3002",
     settings: "\u8bbe\u7f6e",
     settingsKicker: "\u5916\u89c2",
     sidebarClose: "\u5173\u95ed\u4f1a\u8bdd\u5e93",
@@ -221,9 +229,11 @@ const I18N = {
     sourcePath: "\u6765\u6e90",
     sources: "\u6765\u6e90",
     statusDefault: "\u5e38\u89c4",
+    statusFavorite: "\u6536\u85cf",
+    statusHidden: "\u9690\u85cf",
     statusSavedDefault: "\u5df2\u8bbe\u4e3a\u5e38\u89c4\u3002",
     statusSavedFavorite: "\u5df2\u79fb\u5165\u6536\u85cf\u3002",
-    statusSavedHidden: "\u5df2\u79fb\u5165\u9690\u85cf\uff0c\u6e90\u6587\u4ef6\u672a\u5220\u9664\u3002",
+    statusSavedHidden: "\u5df2\u79fb\u5230\u9690\u85cf\u72b6\u6001\u5e76\u79fb\u51fa\u6536\u85cf\uff0c\u53ef\u4ece\u9690\u85cf\u89c6\u56fe\u6062\u590d\u3002",
     statusDefaultTitle: "\u5728\u5e38\u89c4\u4f1a\u8bdd\u5e93\u4e2d\u663e\u793a\u8fd9\u6b21\u4f1a\u8bdd\u3002",
     systemRole: "\u7cfb\u7edf",
     tags: "\u6807\u7b7e",
@@ -322,6 +332,7 @@ const elements = {
   sessionDetail: document.querySelector("#session-detail"),
   embedActiveState: document.querySelector("#topbar-active-state"),
   sidebarToggle: document.querySelector("#sidebar-toggle"),
+  topbarRight: document.querySelector(".topbar-right"),
   sidebarBackdrop: document.querySelector("#sidebar-backdrop"),
   sidebar: document.querySelector(".sidebar-drawer"),
   drawerResizer: document.querySelector("#drawer-resizer"),
@@ -345,7 +356,7 @@ const LAYOUT = {
 };
 
 const ICON_LABELS = {
-  archive: "Hide",
+  archive: "Hidden",
   brand: "ThreadVault",
   browser: "Open in browser",
   claude: "Claude",
@@ -357,8 +368,8 @@ const ICON_LABELS = {
   favoriteFilled: "Favorited",
   filter: "Filter",
   language: "Language",
-  link: "Copy link",
-  memory: "Memory",
+  link: "Copy local link",
+  memory: "Save memory",
   messages: "Messages",
   note: "Notes",
   openSource: "Source file",
@@ -376,12 +387,12 @@ const ICON_LABELS = {
 };
 
 const ICON_LABEL_KEYS = {
-  archive: "archiveAction",
+  archive: "statusHidden",
   browser: "openInBrowser",
   close: "dismissNotice",
   export: "export",
   favorite: "favoriteAction",
-  favoriteFilled: "favorites",
+  favoriteFilled: "statusFavorite",
   filter: "filters",
   language: "language",
   link: "copyLink",
@@ -403,10 +414,10 @@ const ICON_LABEL_KEYS = {
 
 const ICON_PATHS = {
   archive: `
-    <path d="M4.75 12s2.5-4.25 7.25-4.25c1.45 0 2.7.4 3.75 1" />
-    <path d="M19.25 12s-2.5 4.25-7.25 4.25c-1.45 0-2.7-.4-3.75-1" />
-    <path d="M9.85 9.9a3 3 0 0 1 4.25 4.25" />
-    <path d="m5.25 18.75 13.5-13.5" />
+    <path d="M5.25 8.75h13.5v10.5H5.25z" />
+    <path d="M7.25 5.25h9.5l2 3.5H5.25l2-3.5Z" />
+    <path d="M9.25 12.25h5.5" />
+    <path d="m10.25 14.25 1.75 1.75 1.75-1.75" />
   `,
   brand: `
     <path d="M5.25 6.75h13.5v12.5H5.25z" />
@@ -634,6 +645,86 @@ function statusSavedMessage(annotation = {}) {
   return t("statusSavedDefault");
 }
 
+function statusViewModel(annotation = {}) {
+  const status = annotationStatus(annotation);
+  if (status === "favorite") {
+    return {
+      status,
+      icon: "favoriteFilled",
+      label: t("statusFavorite"),
+      title: t("favoriteTitle"),
+      className: "is-favorite"
+    };
+  }
+
+  if (status === "archived") {
+    return {
+      status,
+      icon: "archive",
+      label: t("statusHidden"),
+      title: t("archivedTitle"),
+      className: "is-hidden"
+    };
+  }
+
+  return {
+    status,
+    icon: "status",
+    label: t("statusDefault"),
+    title: t("statusDefaultTitle"),
+    className: "is-default"
+  };
+}
+
+function statusChipHtml(annotation = {}, options = {}) {
+  const model = statusViewModel(annotation);
+  if (options.skipDefault && model.status === "default") {
+    return "";
+  }
+
+  const className = options.detail ? "detail-badge status-chip" : "session-status-chip";
+  return `
+    <span class="${className} ${model.className}" title="${escapeHtml(model.title)}">
+      ${iconSlot(model.icon)}
+      <span>${escapeHtml(model.label)}</span>
+    </span>
+  `;
+}
+
+function stateActionForStatus(status) {
+  if (status === "favorite") {
+    return "state-favorite";
+  }
+  if (status === "archived") {
+    return "state-archived";
+  }
+  return "state-default";
+}
+
+function stateButtonTabIndex(currentStatus, status) {
+  return currentStatus === status ? "0" : "-1";
+}
+
+function stateButtonLabel(currentStatus, status) {
+  if (status === "favorite") {
+    return t("statusFavorite");
+  }
+  if (status === "archived") {
+    return t("statusHidden");
+  }
+  return t("statusDefault");
+}
+
+function focusStateButton(status) {
+  const action = stateActionForStatus(status);
+  const button = elements.sessionDetail.querySelector(`[data-action="${action}"]`);
+  try {
+    button?.focus({ preventScroll: true });
+  } catch {
+    button?.focus();
+  }
+}
+
 function actionStatusElement() {
   return elements.sessionDetail.querySelector("#action-status") || elements.sessionDetail.querySelector("#annotation-status");
 }
@@ -747,6 +838,10 @@ function basenameFromPath(value) {
   return parts.at(-1) || text;
 }
 
+function outputResultName(result) {
+  return result?.fileName || basenameFromPath(result?.path) || t("unknown");
+}
+
 function compactTitle(value) {
   const text = String(value || "").trim();
   const maxLength = /[\u3400-\u9fff]/.test(text) ? 64 : 112;
@@ -809,6 +904,18 @@ function updateSessionUrl(sessionId, replace = false) {
   }
 }
 
+function restoreFocus(element) {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    // Focus restoration is best-effort and should not affect the original action.
+  }
+}
+
 async function copyText(value) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -819,16 +926,20 @@ async function copyText(value) {
     }
   }
 
+  const previousFocus = document.activeElement;
   const textarea = document.createElement("textarea");
   textarea.value = value;
   textarea.setAttribute("readonly", "");
   textarea.style.position = "fixed";
   textarea.style.left = "-9999px";
   document.body.appendChild(textarea);
-  textarea.select();
-  const copied = document.execCommand("copy");
-  textarea.remove();
-  return copied;
+  try {
+    textarea.select();
+    return document.execCommand("copy");
+  } finally {
+    textarea.remove();
+    restoreFocus(previousFocus);
+  }
 }
 
 if (isEmbedMode) {
@@ -836,6 +947,9 @@ if (isEmbedMode) {
 }
 
 function applyHostMode() {
+  if (elements.topbarRight) {
+    elements.topbarRight.hidden = !isEmbedMode;
+  }
   if (elements.openBrowserButton) {
     elements.openBrowserButton.hidden = !isEmbedMode;
   }
@@ -1196,11 +1310,13 @@ async function requestJson(url, options = {}) {
 }
 
 async function postJson(url, payload, options = {}) {
+  const { headers = {}, ...requestOptions } = options;
   return requestJson(url, {
-    ...options,
+    ...requestOptions,
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...headers
     },
     body: JSON.stringify(payload)
   });
@@ -1312,7 +1428,14 @@ function showToast(message, tone = "info") {
     <button class="toast-close" type="button" aria-label="${escapeHtml(t("dismissNotice"))}">${iconSlot("close")}</button>
   `;
 
+  let leaving = false;
+  let autoDismissId = 0;
   const removeToast = () => {
+    if (leaving) {
+      return;
+    }
+    leaving = true;
+    window.clearTimeout(autoDismissId);
     toast.classList.add("is-leaving");
     window.setTimeout(() => {
       toast.remove();
@@ -1321,7 +1444,15 @@ function showToast(message, tone = "info") {
 
   toast.querySelector(".toast-close")?.addEventListener("click", removeToast);
   elements.toastRegion.appendChild(toast);
-  window.setTimeout(removeToast, 4200);
+  autoDismissId = window.setTimeout(removeToast, 4200);
+}
+
+function showActionError(error, status = actionStatusElement()) {
+  const message = String(error?.message || error || t("requestFailed"));
+  if (status) {
+    status.textContent = message;
+  }
+  showToast(message, "warning");
 }
 
 function messageBucket(messages) {
@@ -1576,7 +1707,7 @@ function renderStats(stats) {
   ];
 
   elements.stats.innerHTML = sourceCards.map((card) => `
-    <button class="source-chip ${card.active ? "is-active" : ""}" type="button" data-source-filter="${escapeHtml(card.sourceId)}">
+    <button class="source-chip ${card.active ? "is-active" : ""}" type="button" data-source-filter="${escapeHtml(card.sourceId)}" aria-pressed="${card.active ? "true" : "false"}">
       <div class="source-chip-top">
         <span class="source-chip-title">${escapeHtml(card.label)}</span>
         ${iconSlot(card.icon)}
@@ -1680,18 +1811,17 @@ function renderSessionList() {
 
   elements.sessionList.innerHTML = state.sessions.map((session) => {
     const annotation = normalizeAnnotationState(session.annotation);
-    const activeClass = session.id === state.selectedSessionId ? "active" : "";
+    const isActive = session.id === state.selectedSessionId;
+    const activeClass = isActive ? "active" : "";
     const preview = stripInternalContext(session.searchSnippet || session.summary || "");
-    const favorite = annotation.favorite
-      ? `<span class="favorite-indicator" title="${escapeHtml(ICON_LABELS.favoriteFilled)}">${iconSlot("favoriteFilled")}</span>`
-      : "";
+    const status = statusChipHtml(annotation, { skipDefault: true });
     const tags = tagHtml(annotation.tags);
 
     return `
-      <article class="session-item ${activeClass}" data-session-id="${escapeHtml(session.id)}">
+      <article class="session-item ${activeClass}" data-session-id="${escapeHtml(session.id)}" role="button" tabindex="0" aria-current="${isActive ? "true" : "false"}">
         <div class="session-title-row">
           <h3>${escapeHtml(session.title)}</h3>
-          ${favorite}
+          ${status}
         </div>
         <div class="session-source-pill">
           ${iconSlot(sourceIconKey(session.sourceId))}
@@ -1709,12 +1839,22 @@ function renderSessionList() {
     `;
   }).join("");
 
+  const openSessionItem = (node) => {
+    const sessionId = node.getAttribute("data-session-id");
+    selectSession(sessionId);
+    if (isEmbedMode && state.compactEmbed) {
+      setEmbedSidebarOpen(false);
+    }
+  };
+
   for (const node of elements.sessionList.querySelectorAll(".session-item")) {
     node.addEventListener("click", () => {
-      const sessionId = node.getAttribute("data-session-id");
-      selectSession(sessionId);
-      if (isEmbedMode && state.compactEmbed) {
-        setEmbedSidebarOpen(false);
+      openSessionItem(node);
+    });
+    node.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openSessionItem(node);
       }
     });
   }
@@ -1747,7 +1887,6 @@ function annotationPanelHtml(tagValue, noteValue) {
 function renderSessionDetail(session) {
   delete elements.sessionDetail.dataset.actionBusy;
   const annotation = normalizeAnnotationState(session.annotation);
-  const isArchived = Boolean(annotation.archived);
   const currentStatus = annotationStatus(annotation);
   const displayTitle = compactTitle(session.title);
   const tagValue = annotation.tags.join(", ");
@@ -1799,46 +1938,58 @@ function renderSessionDetail(session) {
           ${iconSlot("workspace")}
           <span>${escapeHtml(session.workspaceName || t("noWorkspace"))}</span>
         </div>
+        ${statusChipHtml(annotation, { detail: true })}
       </div>
       ${tagHtml(annotation.tags)}
       <div class="detail-toolbar" aria-label="${escapeHtml(t("sessionActions"))}">
-        <div class="action-group action-group-open">
-          <button class="secondary-button action-button" type="button" data-action="open-source" title="${escapeHtml(t("sourceFile"))}">
-            ${iconSlot("openSource")}
-            <span>${escapeHtml(t("source"))}</span>
-          </button>
-          <button class="secondary-button action-button" type="button" data-action="open-workspace" ${canOpenWorkspace ? "" : "disabled"} title="${escapeHtml(canOpenWorkspace ? t("workspace") : t("noWorkspace"))}">
-            ${iconSlot("workspace")}
-            <span>${escapeHtml(t("workspace"))}</span>
-          </button>
+        <div class="action-cluster action-cluster-open">
+          <span class="action-cluster-label" id="open-actions-label">${escapeHtml(t("openActions"))}</span>
+          <div class="action-group action-group-open" role="group" aria-labelledby="open-actions-label">
+            <button class="secondary-button action-button" type="button" data-action="open-source" title="${escapeHtml(t("sourceFile"))}">
+              ${iconSlot("openSource")}
+              <span>${escapeHtml(t("source"))}</span>
+            </button>
+            <button class="secondary-button action-button" type="button" data-action="open-workspace" ${canOpenWorkspace ? "" : "disabled"} title="${escapeHtml(canOpenWorkspace ? t("workspace") : t("noWorkspace"))}">
+              ${iconSlot("workspace")}
+              <span>${escapeHtml(t("workspace"))}</span>
+            </button>
+          </div>
         </div>
-        <div class="action-group action-group-state" role="radiogroup" aria-label="${escapeHtml(t("sessionState"))}">
-          <button class="state-button action-button ${currentStatus === "default" ? "is-active" : ""}" type="button" data-action="state-default" role="radio" aria-checked="${currentStatus === "default" ? "true" : "false"}" title="${escapeHtml(t("statusDefaultTitle"))}">
-            ${iconSlot("status")}
-            <span>${escapeHtml(t("statusDefault"))}</span>
-          </button>
-          <button class="state-button action-button ${currentStatus === "favorite" ? "is-active is-favorite" : ""}" type="button" data-action="state-favorite" role="radio" aria-checked="${currentStatus === "favorite" ? "true" : "false"}" title="${escapeHtml(t("favoriteTitle"))}">
-            ${iconSlot(currentStatus === "favorite" ? "favoriteFilled" : "favorite")}
-            <span>${escapeHtml(t("favoriteAction"))}</span>
-          </button>
-          <button class="state-button action-button ${currentStatus === "archived" ? "is-active is-hidden" : ""}" type="button" data-action="state-archived" role="radio" aria-checked="${currentStatus === "archived" ? "true" : "false"}" title="${escapeHtml(t("archivedTitle"))}">
-            ${iconSlot("archive")}
-            <span>${escapeHtml(t("archiveAction"))}</span>
-          </button>
+        <div class="action-cluster action-cluster-state">
+          <span class="action-cluster-label" id="state-actions-label">${escapeHtml(t("sessionState"))}</span>
+          <span class="visually-hidden" id="state-actions-help">${escapeHtml(t("sessionStateHelp"))}</span>
+          <div class="action-group action-group-state" role="group" aria-labelledby="state-actions-label" aria-describedby="state-actions-help">
+            <button class="state-button action-button ${currentStatus === "default" ? "is-active" : ""}" type="button" data-action="state-default" aria-pressed="${currentStatus === "default" ? "true" : "false"}" tabindex="${stateButtonTabIndex(currentStatus, "default")}" title="${escapeHtml(t("statusDefaultTitle"))}">
+              ${iconSlot("status")}
+              <span>${escapeHtml(stateButtonLabel(currentStatus, "default"))}</span>
+            </button>
+            <button class="state-button action-button ${currentStatus === "favorite" ? "is-active is-favorite" : ""}" type="button" data-action="state-favorite" aria-pressed="${currentStatus === "favorite" ? "true" : "false"}" tabindex="${stateButtonTabIndex(currentStatus, "favorite")}" title="${escapeHtml(t("favoriteTitle"))}">
+              ${iconSlot(currentStatus === "favorite" ? "favoriteFilled" : "favorite")}
+              <span>${escapeHtml(stateButtonLabel(currentStatus, "favorite"))}</span>
+            </button>
+            <button class="state-button action-button ${currentStatus === "archived" ? "is-active is-hidden" : ""}" type="button" data-action="state-archived" aria-pressed="${currentStatus === "archived" ? "true" : "false"}" tabindex="${stateButtonTabIndex(currentStatus, "archived")}" title="${escapeHtml(t("archivedTitle"))}">
+              ${iconSlot("archive")}
+              <span>${escapeHtml(stateButtonLabel(currentStatus, "archived"))}</span>
+            </button>
+          </div>
         </div>
-        <div class="action-group action-group-output">
-          <button class="ghost-button action-button" type="button" data-action="export-markdown" title="${escapeHtml(t("exportTitle"))}">
-            ${iconSlot("export")}
-            <span>${escapeHtml(t("export"))}</span>
-          </button>
-          <button class="ghost-button action-button" type="button" data-action="save-memory" title="${escapeHtml(t("saveMemoryTitle"))}">
-            ${iconSlot("memory")}
-            <span>${escapeHtml(t("saveMemory"))}</span>
-          </button>
-          <button class="ghost-button action-button" type="button" data-action="copy-link" title="${escapeHtml(t("copyLinkTitle"))}">
-            ${iconSlot("link")}
-            <span>${escapeHtml(t("copyLink"))}</span>
-          </button>
+        <div class="action-cluster action-cluster-output">
+          <span class="action-cluster-label" id="output-actions-label">${escapeHtml(t("outputActions"))}</span>
+          <span class="visually-hidden" id="output-actions-help">${escapeHtml(t("outputActionsHelp"))}</span>
+          <div class="action-group action-group-output" role="group" aria-labelledby="output-actions-label" aria-describedby="output-actions-help">
+            <button class="ghost-button action-button" type="button" data-action="export-markdown" title="${escapeHtml(t("exportTitle"))}">
+              ${iconSlot("export")}
+              <span>${escapeHtml(t("export"))}</span>
+            </button>
+            <button class="ghost-button action-button" type="button" data-action="save-memory" title="${escapeHtml(t("saveMemoryTitle"))}">
+              ${iconSlot("memory")}
+              <span>${escapeHtml(t("saveMemory"))}</span>
+            </button>
+            <button class="ghost-button action-button" type="button" data-action="copy-link" title="${escapeHtml(t("copyLinkTitle"))}">
+              ${iconSlot("link")}
+              <span>${escapeHtml(t("copyLink"))}</span>
+            </button>
+          </div>
         </div>
       </div>
       <div class="inline-status detail-action-status" id="action-status" aria-live="polite"></div>
@@ -1907,6 +2058,33 @@ function renderSessionDetail(session) {
     });
   }
 
+  elements.sessionDetail.querySelector(".action-group-state")?.addEventListener("keydown", (event) => {
+    const keys = ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "Home", "End"];
+    if (!keys.includes(event.key)) {
+      return;
+    }
+
+    const buttons = Array.from(elements.sessionDetail.querySelectorAll(".action-group-state .state-button"));
+    const currentIndex = buttons.indexOf(event.target.closest(".state-button"));
+    if (currentIndex < 0) {
+      return;
+    }
+
+    event.preventDefault();
+    let nextIndex = currentIndex;
+    if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = buttons.length - 1;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+    } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % buttons.length;
+    }
+
+    buttons[nextIndex]?.focus({ preventScroll: true });
+  });
+
   elements.sessionDetail.onclick = async (event) => {
     const button = event.target.closest("[data-action]");
     if (!button || button.disabled) {
@@ -1941,7 +2119,7 @@ function renderSessionDetail(session) {
     if (action === "open-source") {
       try {
         if (!session.sourcePath) {
-          showToast(t("sourceMissing"), "warning");
+          showActionError(t("sourceMissing"), status);
           return;
         }
 
@@ -1966,7 +2144,7 @@ function renderSessionDetail(session) {
           showToast(message, "success");
         }
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -1976,7 +2154,7 @@ function renderSessionDetail(session) {
     if (action === "open-workspace") {
       try {
         if (!session.workspacePath) {
-          showToast(t("workspaceMissing"), "warning");
+          showActionError(t("workspaceMissing"), status);
           return;
         }
 
@@ -2001,7 +2179,7 @@ function renderSessionDetail(session) {
           showToast(message, "success");
         }
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -2021,8 +2199,9 @@ function renderSessionDetail(session) {
         });
         const message = statusSavedMessage(nextAnnotation);
         showToast(message, "success");
+        focusStateButton(annotationStatus(nextAnnotation));
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -2042,8 +2221,9 @@ function renderSessionDetail(session) {
         });
         const message = statusSavedMessage(nextAnnotation);
         showToast(message, "success");
+        focusStateButton(annotationStatus(nextAnnotation));
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -2055,13 +2235,6 @@ function renderSessionDetail(session) {
         return;
       }
 
-      if (!isArchived) {
-        const confirmed = window.confirm(t("archiveConfirm"));
-        if (!confirmed) {
-          return;
-        }
-      }
-
       try {
         setBusy(t("saving"));
         const nextAnnotation = await saveAnnotation(session.id, {
@@ -2070,8 +2243,9 @@ function renderSessionDetail(session) {
         });
         const message = statusSavedMessage(nextAnnotation);
         showToast(message, "success");
+        focusStateButton(annotationStatus(nextAnnotation));
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -2083,16 +2257,17 @@ function renderSessionDetail(session) {
       try {
         const result = await postJson("/api/export", { sessionId: session.id });
         if (!result.ok) {
-          showToast(result.error || t("exportFailed"), "warning");
+          showActionError(result.error || t("exportFailed"), status);
           return;
         }
-        const message = `${t("exportedTo")} ${result.fileName || result.path}`;
+        const outputName = outputResultName(result);
+        const message = `${t("exportedTo")} ${outputName}`;
         if (status) {
-          status.textContent = `${t("exportedTo")} ${result.path}`;
+          status.textContent = message;
         }
         showToast(message, "success");
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -2104,16 +2279,17 @@ function renderSessionDetail(session) {
       try {
         const result = await postJson("/api/memory", { sessionId: session.id });
         if (!result.ok) {
-          showToast(result.error || t("memoryFailed"), "warning");
+          showActionError(result.error || t("memoryFailed"), status);
           return;
         }
-        const message = `${t("memorySaved")} ${result.fileName || result.path}`;
+        const outputName = outputResultName(result);
+        const message = `${t("memorySaved")} ${outputName}`;
         if (status) {
-          status.textContent = `${t("memorySaved")} ${result.path}`;
+          status.textContent = message;
         }
         showToast(message, "success");
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -2125,7 +2301,7 @@ function renderSessionDetail(session) {
       try {
         const copied = await copyText(browserSessionUrl(session.id));
         if (!copied) {
-          showToast(t("copyFailed"), "warning");
+          showActionError(t("copyFailed"), status);
           return;
         }
         showToast(t("copySuccess"), "success");
@@ -2133,7 +2309,7 @@ function renderSessionDetail(session) {
           status.textContent = t("copySuccess");
         }
       } catch (error) {
-        showToast(String(error.message || error), "warning");
+        showActionError(error, status);
       } finally {
         resetBusy();
       }
@@ -2384,10 +2560,8 @@ elements.openBrowserButton?.addEventListener("click", async () => {
       if (result?.message) {
         showToast(result.message, "success");
       }
-    } else if (isEmbedMode) {
-      window.location.href = fallbackUrl;
     } else {
-      window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+      window.location.href = fallbackUrl;
     }
   } catch (error) {
     if (isEmbedMode) {

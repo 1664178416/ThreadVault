@@ -61,6 +61,9 @@ function oneLine(value, fallback = "Unknown") {
 
 function markdownInline(value, fallback = "Unknown") {
   return oneLine(value, fallback)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
     .replaceAll("\\", "\\\\")
     .replaceAll("`", "\\`")
     .replaceAll("[", "\\[")

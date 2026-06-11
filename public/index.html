@@ -113,7 +113,7 @@
               <div class="scope-header">
                 <span class="scope-title" data-i18n="sources">Sources</span>
               </div>
-              <div id="stats" class="source-grid"></div>
+              <div id="stats" class="source-grid" role="group" aria-label="Sources" data-i18n-aria-label="sources"></div>
             </div>
           </section>
         </section>
@@ -133,6 +133,8 @@
                 id="search-input"
                 class="search-input"
                 type="search"
+                aria-label="Search sessions"
+                data-i18n-aria-label="searchSessions"
                 placeholder="Search sessions"
                 data-i18n-placeholder="searchSessions"
               />
@@ -151,9 +153,15 @@
         id="drawer-resizer"
         class="drawer-resizer"
         type="button"
+        role="separator"
         aria-label="Resize session library"
         data-i18n-aria-label="drawerResize"
-        title="Drag to resize the session library"
+        aria-orientation="vertical"
+        aria-valuemin="292"
+        aria-valuemax="500"
+        aria-valuenow="328"
+        aria-valuetext="328px"
+        title="Drag or use arrow keys to resize the session library"
         data-i18n-title="drawerResizeTitle"
       ></button>
 
@@ -169,7 +177,7 @@
             </button>
             <div id="topbar-active-state" class="topbar-active-state" data-i18n="allSources">All sources</div>
           </div>
-          <div class="topbar-right">
+          <div class="topbar-right" hidden>
             <button id="open-browser-button" class="ghost-button topbar-browser-button" type="button">
               <span class="button-icon" data-icon="browser" aria-hidden="true"></span>
               <span class="button-label" data-i18n="openInBrowser">Open in browser</span>

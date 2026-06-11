@@ -39,6 +39,13 @@ npm run package:vsix
 
 Do not commit private prompts, transcripts, source history files, SQLite databases, exports, memory notes, logs, screenshots with private code, or generated VSIX files. These are intentionally ignored by Git, but please check `git status --short` before opening a PR.
 
+Before committing, also compare staged and unstaged paths so a finished fix is not left behind:
+
+```bash
+git diff --name-only
+git diff --cached --name-only
+```
+
 When adding fixtures or screenshots, use synthetic data that does not come from a real private conversation.
 
 ## Code Guidelines

@@ -130,6 +130,123 @@ function assertFileContains(relativePath, patterns) {
   }
 }
 
+function assertFileExcludes(relativePath, patterns) {
+  const content = fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
+  for (const pattern of patterns) {
+    if (content.includes(pattern)) {
+      fail(`${relativePath} should not include ${pattern}.`);
+    }
+  }
+}
+
+function extractBalancedBlock(content, openIndex) {
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+
+  for (let index = openIndex; index < content.length; index += 1) {
+    const char = content[index];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+
+    if (char === "\"" || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return content.slice(openIndex, index + 1);
+      }
+    }
+  }
+
+  fail("Unable to parse a balanced JavaScript object block.");
+  return "";
+}
+
+function extractBlockAfter(content, marker) {
+  const markerIndex = content.indexOf(marker);
+  if (markerIndex < 0) {
+    fail(`Unable to find ${marker}.`);
+    return "";
+  }
+
+  const openIndex = content.indexOf("{", markerIndex);
+  if (openIndex < 0) {
+    fail(`Unable to find object block after ${marker}.`);
+    return "";
+  }
+
+  return extractBalancedBlock(content, openIndex);
+}
+
+function extractPropertyBlock(content, propertyName) {
+  const match = new RegExp(`\\b${escapeRegExp(propertyName)}\\s*:\\s*\\{`).exec(content);
+  if (!match) {
+    fail(`Unable to find ${propertyName} object block.`);
+    return "";
+  }
+
+  const openIndex = match.index + match[0].lastIndexOf("{");
+  return extractBalancedBlock(content, openIndex);
+}
+
+function collectObjectKeys(block) {
+  return Array.from(block.matchAll(/^\s*([A-Za-z_$][\w$]*)\s*:/gm), (match) => match[1]);
+}
+
+function collectObjectStringValues(block) {
+  return Array.from(block.matchAll(/^\s*[A-Za-z_$][\w$]*\s*:\s*"([^"]+)"/gm), (match) => match[1]);
+}
+
+function assertSetEquals(label, leftName, leftValues, rightName, rightValues) {
+  const left = new Set(leftValues);
+  const right = new Set(rightValues);
+  const missing = [...left].filter((value) => !right.has(value)).sort();
+  const extra = [...right].filter((value) => !left.has(value)).sort();
+
+  if (missing.length || extra.length) {
+    fail(`${label} mismatch. Missing in ${rightName}: ${missing.join(", ") || "none"}. Extra in ${rightName}: ${extra.join(", ") || "none"}. Compared ${leftName} -> ${rightName}.`);
+  }
+}
+
+function assertI18nIntegrity() {
+  const appContent = fs.readFileSync(path.join(projectRoot, "public/app.js"), "utf8");
+  const htmlContent = fs.readFileSync(path.join(projectRoot, "public/index.html"), "utf8");
+  const i18nBlock = extractBlockAfter(appContent, "const I18N =");
+  const enKeys = collectObjectKeys(extractPropertyBlock(i18nBlock, "en"));
+  const zhKeys = collectObjectKeys(extractPropertyBlock(i18nBlock, "zh"));
+
+  assertSetEquals("I18N locale keys", "en", enKeys, "zh", zhKeys);
+
+  const enSet = new Set(enKeys);
+  const dataI18nKeys = Array.from(htmlContent.matchAll(/data-i18n(?:-[a-z-]+)?="([^"]+)"/g), (match) => match[1]);
+  for (const key of new Set(dataI18nKeys)) {
+    if (!enSet.has(key)) {
+      fail(`public/index.html references missing I18N key: ${key}.`);
+    }
+  }
+
+  const iconLabelBlock = extractBlockAfter(appContent, "const ICON_LABEL_KEYS =");
+  for (const key of new Set(collectObjectStringValues(iconLabelBlock))) {
+    if (!enSet.has(key)) {
+      fail(`ICON_LABEL_KEYS references missing I18N key: ${key}.`);
+    }
+  }
+}
+
 function pngDimensions(relativePath) {
   const filePath = path.join(projectRoot, relativePath);
   const buffer = fs.readFileSync(filePath);
@@ -414,15 +531,15 @@ function runStateAndExportRegression() {
       const session = {
         id: "verify-session",
         sourceId: "codex",
-        sourceLabel: "Codex",
+        sourceLabel: "Codex <script>alert(1)</script>",
         sourceSessionId: "CON",
-        title: "CON",
+        title: "CON <script>alert(1)</script> [unsafe]",
         summary: "Regression summary",
-        workspacePath: "C:/workspace/demo",
+        workspacePath: "C:/workspace/<demo>/[unsafe]",
         workspaceName: "AUX",
         createdAt: "2026-06-10T01:00:00.000Z",
         updatedAt: "2026-06-10T02:00:00.000Z",
-        status: "complete",
+        status: "complete <b>unsafe</b>",
         resumeType: "thread",
         fingerprint: "verify-fingerprint",
         sourcePath: "C:/Users/wyh/.codex/session.jsonl",
@@ -434,8 +551,8 @@ function runStateAndExportRegression() {
           role: "user",
           content: "Please keep this local.",
           timestamp: "2026-06-10T01:00:00.000Z",
-          model: "test-model",
-          referencedFiles: ["C:/workspace/demo/app.js"],
+          model: "test-model <unsafe>",
+          referencedFiles: ["C:/workspace/<demo>/[app].js"],
           metadata: {}
         }]
       };
@@ -455,13 +572,18 @@ function runStateAndExportRegression() {
         throw new Error(\`hide should clear favorite and enable hidden: \${JSON.stringify(hidden)}\`);
       }
 
+      const hiddenFromConflictingPayload = updateSessionAnnotation(session.id, { favorite: true, archived: true });
+      if (hiddenFromConflictingPayload.favorite || !hiddenFromConflictingPayload.archived) {
+        throw new Error(\`hidden should win conflicting favorite/hidden updates: \${JSON.stringify(hiddenFromConflictingPayload)}\`);
+      }
+
       const restoredByFavorite = updateSessionAnnotation(session.id, { favorite: true });
       if (!restoredByFavorite.favorite || restoredByFavorite.archived) {
         throw new Error(\`favorite should restore hidden sessions: \${JSON.stringify(restoredByFavorite)}\`);
       }
 
-      const tagged = updateSessionAnnotation(session.id, { tags: ["Bug", " bug ", "UI", "ui", "Memory"] });
-      if (JSON.stringify(tagged.tags) !== JSON.stringify(["Bug", "UI", "Memory"])) {
+      const tagged = updateSessionAnnotation(session.id, { tags: ["Bug", " bug ", "UI", "ui", "Memory", "<script>"] });
+      if (JSON.stringify(tagged.tags) !== JSON.stringify(["Bug", "UI", "Memory", "<script>"])) {
         throw new Error(\`tags should be case-insensitive deduplicated while keeping first display form: \${JSON.stringify(tagged.tags)}\`);
       }
 
@@ -484,7 +606,7 @@ function runStateAndExportRegression() {
       if (!memoryResult.ok || !fs.existsSync(memoryResult.path)) {
         throw new Error(\`memory failed: \${JSON.stringify(memoryResult)}\`);
       }
-      if (!path.basename(exportResult.path).startsWith("con-item-")) {
+      if (!path.basename(exportResult.path).includes("con-item")) {
         throw new Error(\`Windows reserved export name was not sanitized: \${exportResult.path}\`);
       }
       if (!memoryResult.path.split(path.sep).includes("aux-item")) {
@@ -498,6 +620,16 @@ function runStateAndExportRegression() {
       }
       if (!memoryMarkdown.includes("- ThreadVault action: memory")) {
         throw new Error("memory markdown should record the ThreadVault action");
+      }
+      for (const unsafe of ["<script>", "<b>unsafe</b>", "C:/workspace/<demo>"]) {
+        if (exportMarkdown.includes(unsafe) || memoryMarkdown.includes(unsafe)) {
+          throw new Error("markdown metadata should escape raw HTML/control text: " + unsafe);
+        }
+      }
+      for (const escaped of ["&lt;script&gt;", "&lt;b&gt;unsafe&lt;/b&gt;", "C:/workspace/&lt;demo&gt;/\\\\[unsafe\\\\]"]) {
+        if (!exportMarkdown.includes(escaped) || !memoryMarkdown.includes(escaped)) {
+          throw new Error("markdown metadata should include escaped text: " + escaped);
+        }
       }
 
       const detail = getSessionDetail(session.id);
@@ -673,6 +805,19 @@ function runServerHttpRegression() {
         if (traversal.status !== 404) {
           throw new Error("path traversal should return 404, got " + traversal.status);
         }
+        const traversalPayload = JSON.parse(traversal.body);
+        if (traversalPayload.ok !== false || traversalPayload.error !== "Not found") {
+          throw new Error("static 404 should return ok:false JSON, got " + traversal.body);
+        }
+
+        const unknownApi = await request("/api/unknown-route");
+        if (unknownApi.status !== 404) {
+          throw new Error("unknown API route should return 404, got " + unknownApi.status);
+        }
+        const unknownApiPayload = JSON.parse(unknownApi.body);
+        if (unknownApiPayload.ok !== false || unknownApiPayload.error !== "Unknown API route") {
+          throw new Error("unknown API route should return ok:false JSON, got " + unknownApi.body);
+        }
 
         const badSessionEncoding = await request("/api/sessions/%E0%A4%A");
         if (badSessionEncoding.status !== 400 || !badSessionEncoding.body.includes("Invalid session id encoding")) {
@@ -686,6 +831,14 @@ function runServerHttpRegression() {
         const healthPayload = JSON.parse(health.body);
         if (!healthPayload.ok || healthPayload.app !== "ThreadVault" || !healthPayload.host || !healthPayload.port || !healthPayload.node) {
           throw new Error("health payload is missing diagnostics: " + health.body);
+        }
+
+        const healthHead = await request("/api/health", { method: "HEAD" });
+        if (healthHead.status !== 200 || healthHead.body !== "") {
+          throw new Error("HEAD health should return headers without a body, got " + healthHead.status + " " + healthHead.body.length);
+        }
+        if (!String(healthHead.headers["content-type"] || "").startsWith("application/json")) {
+          throw new Error("HEAD health should keep JSON content type");
         }
 
         const forbidden = await request("/api/scan", {
@@ -733,6 +886,7 @@ assertGlobLikeSelfTest();
 runStateAndExportRegression();
 runServerCorsRegression();
 runServerHttpRegression();
+assertI18nIntegrity();
 
 for (const relativePath of sourceCheckFiles()) {
   if (!fs.existsSync(path.join(projectRoot, relativePath))) {
@@ -955,6 +1109,9 @@ assertFileContains("src/services/exporter.js", [
   "WINDOWS_RESERVED_NAMES.has(slug)",
   "function oneLine",
   "function markdownInline",
+  ".replaceAll(\"&\", \"&amp;\")",
+  ".replaceAll(\"<\", \"&lt;\")",
+  ".replaceAll(\">\", \"&gt;\")",
   "function markdownHeading",
   "function markdownListValue",
   "function buildMarkdown(session, action = \"export\")",
@@ -990,6 +1147,9 @@ assertFileContains("public/app.js", [
   "if (!completed)",
   "window.clearTimeout(timeoutId)",
   "timeoutMs: SCAN_REQUEST_TIMEOUT_MS",
+  "const { headers = {}, ...requestOptions } = options",
+  "...requestOptions",
+  "...headers",
   "function readLocalStorage",
   "function writeLocalStorage",
   "return window.localStorage.getItem(key)",
@@ -998,6 +1158,11 @@ assertFileContains("public/app.js", [
   "writeLocalStorage(SETTINGS.storageKey",
   "readLocalStorage(LAYOUT.storageKey)",
   "writeLocalStorage(LAYOUT.storageKey",
+  "let leaving = false",
+  "let autoDismissId = 0",
+  "if (leaving)",
+  "window.clearTimeout(autoDismissId)",
+  "autoDismissId = window.setTimeout(removeToast, 4200)",
   "Drag or use arrow keys to resize the session library",
   "aria-valuetext",
   "elements.drawerResizer.addEventListener(\"keydown\"",
@@ -1007,17 +1172,66 @@ assertFileContains("public/app.js", [
   "event.key === \"End\"",
   "function browserSessionUrl",
   "new URL(window.location.pathname || \"/\", window.location.origin)",
+  "function applyHostMode",
+  "topbarRight: document.querySelector(\".topbar-right\")",
+  "elements.topbarRight.hidden = !isEmbedMode",
+  "elements.openBrowserButton.hidden = !isEmbedMode",
+  "window.location.href = fallbackUrl",
+  "function restoreFocus",
+  "Focus restoration is best-effort",
+  "const previousFocus = document.activeElement",
+  "return document.execCommand(\"copy\")",
+  "finally {",
+  "textarea.remove();",
+  "restoreFocus(previousFocus)",
+  "function showActionError",
+  "status.textContent = message",
   "function normalizeAnnotationState",
   "function annotationStatus",
+  "function statusViewModel",
+  "function statusChipHtml",
+  "function stateActionForStatus",
+  "function stateButtonTabIndex",
+  "function stateButtonLabel",
+  "function focusStateButton",
   "favorite: archived ? false : Boolean(annotation.favorite)",
+  "statusChipHtml(annotation, { skipDefault: true })",
+  "statusChipHtml(annotation, { detail: true })",
+  "data-source-filter=\"${escapeHtml(card.sourceId)}\" aria-pressed=\"${card.active ? \"true\" : \"false\"}\"",
+  "role=\"button\" tabindex=\"0\" aria-current=",
+  "const openSessionItem = (node) =>",
+  "event.key === \"Enter\" || event.key === \" \"",
   "delete elements.sessionDetail.dataset.actionBusy",
   "data-action=\"state-default\"",
   "data-action=\"state-favorite\"",
   "data-action=\"state-archived\"",
-  "role=\"radiogroup\"",
+  "id=\"state-actions-label\"",
+  "id=\"state-actions-help\"",
+  "role=\"group\" aria-labelledby=\"state-actions-label\" aria-describedby=\"state-actions-help\"",
+  "id=\"output-actions-label\"",
+  "id=\"output-actions-help\"",
+  "role=\"group\" aria-labelledby=\"output-actions-label\" aria-describedby=\"output-actions-help\"",
+  "aria-pressed=\"${currentStatus === \"default\" ? \"true\" : \"false\"}\"",
+  "aria-pressed=\"${currentStatus === \"favorite\" ? \"true\" : \"false\"}\"",
+  "aria-pressed=\"${currentStatus === \"archived\" ? \"true\" : \"false\"}\"",
+  "tabindex=\"${stateButtonTabIndex(currentStatus, \"default\")}\"",
+  "tabindex=\"${stateButtonTabIndex(currentStatus, \"favorite\")}\"",
+  "tabindex=\"${stateButtonTabIndex(currentStatus, \"archived\")}\"",
+  "stateButtonLabel(currentStatus, \"favorite\")",
+  "stateButtonLabel(currentStatus, \"archived\")",
+  "querySelector(\".action-group-state\")?.addEventListener(\"keydown\"",
+  "\"ArrowLeft\", \"ArrowUp\", \"ArrowRight\", \"ArrowDown\", \"Home\", \"End\"",
+  "buttons[nextIndex]?.focus({ preventScroll: true })",
+  "focusStateButton(annotationStatus(nextAnnotation))",
   "#save-note-button",
   "button.disabled = true",
   "label.textContent = t(\"saving\")",
+  "showActionError(t(\"sourceMissing\"), status)",
+  "showActionError(t(\"workspaceMissing\"), status)",
+  "showActionError(result.error || t(\"exportFailed\"), status)",
+  "showActionError(result.error || t(\"memoryFailed\"), status)",
+  "showActionError(t(\"copyFailed\"), status)",
+  "showActionError(error, status)",
   "showToast(message, \"warning\")",
   "function isAllowedHostBridgeOrigin",
   "state.hostBridgeOrigin = event.origin",
@@ -1025,23 +1239,61 @@ assertFileContains("public/app.js", [
   "sessionId: session.id",
   "target: \"source\"",
   "target: \"workspace\"",
-  "favorite: false,\n          archived: true",
+  "favorite: false,",
+  "archived: true",
   "result.failedSessions",
   "result.failedSources",
   "scanSourceFailed",
-  "result.fileName || result.path",
-  "status.textContent = `${t(\"exportedTo\")} ${result.path}`",
-  "status.textContent = `${t(\"memorySaved\")} ${result.path}`"
+  "function outputResultName",
+  "result?.fileName || basenameFromPath(result?.path) || t(\"unknown\")",
+  "const outputName = outputResultName(result)",
+  "status.textContent = message"
 ]);
 
 assertFileContains("public/styles.css", [
   "[hidden]",
-  "display: none !important"
+  "display: none !important",
+  ".visually-hidden",
+  ".session-item:focus-visible",
+  ".action-cluster-state",
+  ".action-cluster-output",
+  ".topbar-browser-button",
+  "body.embed-mode .topbar-browser-button",
+  "display: none"
+]);
+
+assertFileExcludes("public/app.js", [
+  "archiveAction",
+  "archiveConfirm",
+  "archive: \"Hide\"",
+  "window.confirm(",
+  "window.open(",
+  "const isArchived = Boolean(annotation.archived)",
+  "\u9356\u70ac\u4eee\u6fb6",
+  "role=\"radiogroup\"",
+  "role=\"radio\"",
+  "aria-checked=",
+  "stateRadioTabIndex",
+  "status.textContent = `${t(\"exportedTo\")} ${result.path}`",
+  "status.textContent = `${t(\"memorySaved\")} ${result.path}`"
 ]);
 
 assertFileContains("public/index.html", [
   "href=\"/favicon.svg\"",
-  "type=\"image/svg+xml\""
+  "type=\"image/svg+xml\"",
+  "aria-label=\"Search sessions\"",
+  "data-i18n-aria-label=\"searchSessions\"",
+  "id=\"stats\" class=\"source-grid\" role=\"group\"",
+  "data-i18n-aria-label=\"sources\"",
+  "class=\"topbar-right\" hidden",
+  "id=\"drawer-resizer\"",
+  "role=\"separator\"",
+  "aria-orientation=\"vertical\"",
+  "aria-valuemin=\"292\"",
+  "aria-valuemax=\"500\"",
+  "aria-valuenow=\"328\"",
+  "aria-valuetext=\"328px\"",
+  "title=\"Drag or use arrow keys to resize the session library\""
 ]);
 
 assertFileContains("src/db/repository.js", [
@@ -1053,10 +1305,10 @@ assertFileContains("src/db/repository.js", [
   "const normalizedQuery = normalizeQuery(query)",
   "const normalizedLimit = normalizeLimit(limit)",
   "a.favorite = 1 AND COALESCE(a.archived, 0) = 0",
-  "if (updateFavorite === true)",
-  "nextArchived = false",
-  "else if (updateArchived === true)",
+  "if (updateArchived === true)",
   "nextFavorite = false",
+  "else if (updateFavorite === true)",
+  "nextArchived = false",
   "failedSessions",
   "stats.errors",
   "db.exec(\"BEGIN TRANSACTION\")"
@@ -1134,7 +1386,16 @@ assertFileContains("extension/extension.js", [
   "message.hostToken !== hostToken",
   "...payload,\n    source: \"threadvault-host\",\n    hostToken",
   "threadvault-open-browser",
+  "const sessionId = parsedUrl.searchParams.get(\"session\") || \"\"",
+  "baseUrl.searchParams.set(\"session\", sessionId)",
   "error: error.message || String(error)"
+]);
+
+assertFileExcludes("extension/extension.js", [
+  "parsedUrl.searchParams.delete(\"embed\")",
+  "parsedUrl.searchParams.delete(\"host\")",
+  "parsedUrl.searchParams.delete(\"hostToken\")",
+  "parsedUrl.searchParams.delete(\"v\")"
 ]);
 
 assertFileContains("src/server.js", [
@@ -1157,6 +1418,8 @@ assertFileContains("src/server.js", [
   "Invalid session id encoding.",
   "GET, HEAD, POST, OPTIONS",
   "request.method === \"HEAD\"",
+  "if (request.method === \"HEAD\")",
+  "(request.method === \"GET\" || request.method === \"HEAD\") && url.pathname === \"/api/health\"",
   "function methodAllowedForStatic",
   "Method not allowed.",
   "function runInitialScanSoon",
@@ -1165,6 +1428,9 @@ assertFileContains("src/server.js", [
   "let fileStat = null",
   "fileStat = filePath ? fs.statSync(filePath) : null",
   "if (!fileStat?.isFile())",
+  "error: \"Not found\"",
+  "error: \"Session not found\"",
+  "error: \"Unknown API route\"",
   "Promise.resolve(callback(payload)).catch",
   "if (!response.headersSent)",
   "setTimeout(() =>",
@@ -1186,11 +1452,13 @@ assertFileContains("README.md", [
   "[![CI](https://github.com/wyh/threadvault/actions/workflows/ci.yml/badge.svg)]",
   "code --install-extension extension/threadvault-vscode-*.vsix",
   "Get-ChildItem extension\\threadvault-vscode-*.vsix",
+  "git diff --name-only",
+  "git diff --cached --name-only",
   "Session state is intentionally one-of-three",
   "This does not delete the source history file or the local database row.",
   "`Export MD`: create a Markdown copy under `data/exports/`",
-  "`Memory`: save a durable Markdown note under the memory directory",
-  "`Copy link`: copy a local URL",
+  "`Save memory`: save a durable Markdown note under the memory directory",
+  "`Copy local link`: copy a local-only URL",
   "See `CONTRIBUTING.md` for local setup",
   "See `SECURITY.md` for the supported security model",
   "`preview`, and `galleryBanner`",
@@ -1210,6 +1478,8 @@ assertFileContains("CONTRIBUTING.md", [
   "npm run prepare:extension",
   "npm run verify",
   "git diff --check",
+  "git diff --name-only",
+  "git diff --cached --name-only",
   "Do not commit private prompts, transcripts, source history files, SQLite databases, exports, memory notes, logs, screenshots with private code, or generated VSIX files.",
   "Keep session states mutually exclusive: `Regular`, `Favorite`, and `Hidden`.",
   "Preserve local-first defaults."

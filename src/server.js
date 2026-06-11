@@ -100,6 +100,10 @@ function sendJson(request, response, statusCode, payload) {
     "Access-Control-Allow-Headers": "Content-Type",
     ...baseHeaders(request)
   });
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
   response.end(JSON.stringify(payload));
 }
 
@@ -195,7 +199,10 @@ function serveStatic(request, response, pathname) {
   }
 
   if (!fileStat?.isFile()) {
-    sendJson(request, response, 404, { error: "Not found" });
+    sendJson(request, response, 404, {
+      ok: false,
+      error: "Not found"
+    });
     return;
   }
   sendFile(request, response, filePath, getContentType(filePath));
@@ -279,7 +286,7 @@ function handleApi(request, response, url) {
     return;
   }
 
-  if (request.method === "GET" && url.pathname === "/api/health") {
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/health") {
     sendJson(request, response, 200, {
       ok: true,
       app: APP_NAME,
@@ -323,7 +330,10 @@ function handleApi(request, response, url) {
 
     const session = getSessionById(sessionId);
     if (!session) {
-      sendJson(request, response, 404, { error: "Session not found" });
+      sendJson(request, response, 404, {
+        ok: false,
+        error: "Session not found"
+      });
       return;
     }
     sendJson(request, response, 200, session);
@@ -446,7 +456,10 @@ function handleApi(request, response, url) {
     return;
   }
 
-  sendJson(request, response, 404, { error: "Unknown API route" });
+  sendJson(request, response, 404, {
+    ok: false,
+    error: "Unknown API route"
+  });
 }
 
 export function createServer() {

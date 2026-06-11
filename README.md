@@ -50,7 +50,7 @@ npm run scan
 3. Check the source counters for Copilot, Codex, and Claude.
 4. Use search to find an old prompt, error message, file name, or project name.
 5. Select a session to read the transcript.
-6. Set the session state to `Regular`, `Favorite`, or `Hidden`, then use `Notes`, `Export`, or `Memory` as needed.
+6. Set the session state to `Regular`, `Favorite`, or `Hidden`, then use `Notes`, `Export MD`, `Save memory`, or `Copy local link` as needed.
 
 If no sessions appear, make sure you have used at least one supported tool locally and that its history files exist on disk.
 
@@ -85,12 +85,12 @@ Session state is intentionally one-of-three:
 The transcript actions have different jobs:
 
 - `Export MD`: create a Markdown copy under `data/exports/` for sharing, backup, or manual review.
-- `Memory`: save a durable Markdown note under the memory directory for conversations worth reusing later.
-- `Copy link`: copy a local URL that opens the dashboard directly on the selected session.
+- `Save memory`: save a durable Markdown note under the memory directory for conversations worth reusing later.
+- `Copy local link`: copy a local-only URL that opens the dashboard directly on the selected session.
 
 ## Markdown Memory
 
-Use the `Memory` action on a session when you want to keep a high-value conversation as a durable Markdown note.
+Use the `Save memory` action on a session when you want to keep a high-value conversation as a durable Markdown note.
 
 By default, memory files are written to:
 
@@ -203,9 +203,11 @@ Before pushing to GitHub, double-check:
 
 ```bash
 git status --short
+git diff --name-only
+git diff --cached --name-only
 ```
 
-Make sure `data/` and packaged `.vsix` files are not staged.
+Make sure `data/` and packaged `.vsix` files are not staged, and make sure no intended source or documentation change is still unstaged.
 
 ## Contributing And Security
 
