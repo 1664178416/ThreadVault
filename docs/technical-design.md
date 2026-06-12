@@ -79,7 +79,7 @@ The extension contributes:
 
 The embedded panel is an iframe pointed at the local dashboard. A tokenized host bridge allows only trusted messages between the webview and the dashboard for browser-open and path-open actions.
 
-When installed from VSIX or Marketplace, the extension copies the bundled app into VS Code global storage before launching it. The copy is refreshed when either the extension version or the bundle fingerprint changes.
+When installed from VSIX or Marketplace, the extension copies the bundled app into VS Code global storage before launching it. The copy is refreshed when either the extension version or the bundle fingerprint changes. The running server signature also includes the runtime fingerprint, and the health endpoint returns it too, so same-version VSIX installs and development source changes restart the local service instead of leaving an older Node process attached to the new UI.
 
 ## Verification
 

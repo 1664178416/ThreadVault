@@ -6,12 +6,15 @@ Thanks for helping improve ThreadVault. The project is a local-first archive for
 
 Use Node.js 24 or newer.
 
+ThreadVault currently uses Node built-ins for the app runtime, so there is no dependency install step for normal local development.
+
 ```bash
-npm install
 npm run dev
 ```
 
 Open the dashboard at `http://127.0.0.1:3187`.
+
+Packaging uses a pinned non-interactive `npx --yes @vscode/vsce@3.9.2` command through `npm run package:vsix`, so you do not need to add a committed `node_modules/` folder or generated lockfile.
 
 For VS Code extension work, open the `extension` folder in VS Code and run the extension launch configuration. From the repository root, keep the packaged runtime in sync with:
 

@@ -5,6 +5,19 @@ import { getSessionDetail } from "../db/repository.js";
 
 const VALID_TARGETS = new Set(["source", "workspace"]);
 
+function targetLabel(target) {
+  return target === "workspace" ? "workspace" : "source file";
+}
+
+function targetMissingMessage(target, targetPath) {
+  const label = targetLabel(target);
+  if (!targetPath) {
+    return `This session does not include a saved ${label} path.`;
+  }
+
+  return `The saved ${label} path no longer exists: ${targetPath}`;
+}
+
 function codeCommandError(error) {
   const details = error?.message || String(error || "Unknown error");
   if (error?.code === "ENOENT") {
@@ -76,7 +89,9 @@ export async function openSessionTargetInVsCode(sessionId, target) {
   if (!targetPath || !fs.existsSync(targetPath)) {
     return {
       ok: false,
-      error: "Target path does not exist."
+      error: targetMissingMessage(target, targetPath),
+      target,
+      path: targetPath || ""
     };
   }
 

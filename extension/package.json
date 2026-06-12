@@ -43,10 +43,13 @@
     "copilot",
     "codex",
     "claude",
+    "ai",
     "chat",
     "archive",
     "search",
-    "history"
+    "history",
+    "memory",
+    "local-first"
   ],
   "galleryBanner": {
     "color": "#111614",

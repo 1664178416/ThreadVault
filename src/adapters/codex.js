@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { CODEX_SESSIONS_DIR } from "../config.js";
@@ -213,6 +214,99 @@ function extractFirstUserPrompt(records) {
   return "";
 }
 
+function normalizeWorkspacePath(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    return path.normalize(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
+function isCodexScratchWorkspace(workspacePath) {
+  if (!workspacePath) {
+    return false;
+  }
+
+  const normalizedPath = normalizeWorkspacePath(workspacePath).toLowerCase();
+  const scratchRoot = path.join(os.homedir(), "Documents", "Codex").toLowerCase();
+
+  return normalizedPath === scratchRoot || normalizedPath.startsWith(`${scratchRoot}${path.sep}`);
+}
+
+function addWorkspaceEvidence(evidence, rawPath, weight, lastSeenAt) {
+  const workspacePath = normalizeWorkspacePath(rawPath);
+  if (!workspacePath) {
+    return;
+  }
+
+  const key = workspacePath.toLowerCase();
+  const existing = evidence.get(key);
+  if (existing) {
+    existing.score += weight;
+    existing.lastSeenAt = Math.max(existing.lastSeenAt, lastSeenAt);
+    return;
+  }
+
+  evidence.set(key, {
+    workspacePath,
+    score: weight,
+    lastSeenAt
+  });
+}
+
+function extractWorkspacePathFromToolCall(record) {
+  if (record?.type !== "response_item" || record.payload?.type !== "function_call") {
+    return "";
+  }
+
+  const rawArguments = record.payload.arguments;
+  if (typeof rawArguments !== "string" || !rawArguments.trim()) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(rawArguments);
+    return typeof parsed?.workdir === "string" ? parsed.workdir : "";
+  } catch {
+    return "";
+  }
+}
+
+function deriveWorkspacePath(records, sessionMeta) {
+  const evidence = new Map();
+
+  addWorkspaceEvidence(evidence, sessionMeta.cwd, 1, -1);
+
+  records.forEach((record, index) => {
+    if (record?.type === "turn_context") {
+      addWorkspaceEvidence(evidence, record.payload?.cwd, 4, index);
+    }
+
+    addWorkspaceEvidence(evidence, extractWorkspacePathFromToolCall(record), 3, index);
+  });
+
+  const candidates = [...evidence.values()];
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const nonScratchCandidates = candidates.filter((candidate) => !isCodexScratchWorkspace(candidate.workspacePath));
+  const pool = nonScratchCandidates.length > 0 ? nonScratchCandidates : candidates;
+
+  pool.sort((left, right) => right.score - left.score || right.lastSeenAt - left.lastSeenAt);
+
+  return pool[0]?.workspacePath || null;
+}
+
 function normalizeSession(records, filePath) {
   const sessionMeta = records.find((record) => record.type === "session_meta")?.payload || {};
   const sourceSessionId = sessionMeta.id || path.basename(filePath, path.extname(filePath));
@@ -236,7 +330,7 @@ function normalizeSession(records, filePath) {
 
   const firstUserMessage = messages.find((message) => message.role === "user")?.content || "";
   const firstPrompt = extractFirstUserPrompt(records) || firstUserMessage;
-  const workspacePath = sessionMeta.cwd || null;
+  const workspacePath = deriveWorkspacePath(records, sessionMeta);
   const title = deriveTitle(extractThreadName(records), firstPrompt, "Untitled Codex Session");
   const createdAt = sessionMeta.timestamp || records[0]?.timestamp || null;
   const updatedAt = records[records.length - 1]?.timestamp || createdAt;

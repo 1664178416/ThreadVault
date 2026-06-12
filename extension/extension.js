@@ -204,12 +204,45 @@ function serverConfigSignature(runtime) {
     nodePath: configuredNodePath(),
     dataDir: runtime.dataDir,
     memoryDir: runtime.memoryDir,
-    root: runtime.root
+    root: runtime.root,
+    fingerprint: runtime.fingerprint
   });
 }
 
 function hasAppFiles(rootPath) {
   return fs.existsSync(path.join(rootPath, "src", "server.js")) && fs.existsSync(path.join(rootPath, "public", "app.js"));
+}
+
+function listFilesRecursive(rootPath) {
+  const files = [];
+  for (const entry of fs.readdirSync(rootPath, { withFileTypes: true })) {
+    const entryPath = path.join(rootPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listFilesRecursive(entryPath));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+  return files.sort((a, b) => a.localeCompare(b));
+}
+
+function computeAppFingerprint(rootPath) {
+  try {
+    const hash = crypto.createHash("sha256");
+    for (const entryName of ["src", "public"]) {
+      const entryRoot = path.join(rootPath, entryName);
+      for (const filePath of listFilesRecursive(entryRoot)) {
+        const relativePath = path.relative(rootPath, filePath).replaceAll(path.sep, "/");
+        hash.update(relativePath);
+        hash.update("\0");
+        hash.update(fs.readFileSync(filePath));
+        hash.update("\0");
+      }
+    }
+    return hash.digest("hex");
+  } catch {
+    return "";
+  }
 }
 
 function readBundleFingerprint(rootPath) {
@@ -246,6 +279,7 @@ function ensureRuntimeApp(context) {
     return {
       mode: "development",
       root: devRoot,
+      fingerprint: computeAppFingerprint(devRoot),
       dataDir,
       memoryDir: configuredPath("memoryDirectory", path.join(dataDir, "memory"))
     };
@@ -278,6 +312,7 @@ function ensureRuntimeApp(context) {
   return {
     mode: "bundled",
     root: targetRoot,
+    fingerprint: readBundleFingerprint(targetRoot) || bundledFingerprint,
     dataDir,
     memoryDir: configuredPath("memoryDirectory", path.join(dataDir, "memory"))
   };
@@ -419,38 +454,54 @@ function stopServerProcess(reason = "Stopping local server.") {
   });
 }
 
-async function isServerReady() {
+function healthMatches(payload, expectedFingerprint = "") {
+  return Boolean(
+    payload &&
+    payload.ok &&
+    payload.app === HEALTH_APP_NAME &&
+    Number(payload.port) === configuredPort() &&
+    (!expectedFingerprint || payload.runtimeFingerprint === expectedFingerprint)
+  );
+}
+
+async function readServerHealth() {
   try {
-    const payload = await request("GET", "/api/health");
-    const ready = Boolean(
-      payload.ok &&
-      payload.app === HEALTH_APP_NAME &&
-      Number(payload.port) === configuredPort()
-    );
-    if (!ready && payload.ok) {
-      logLine(`Ignoring unexpected health response on ${dashboardBaseUrl()}: ${JSON.stringify(payload)}`);
-    }
-    return ready;
+    return await request("GET", "/api/health");
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function isServerReady(expectedFingerprint = "") {
+  const payload = await readServerHealth();
+  const ready = healthMatches(payload, expectedFingerprint);
+  if (!ready && payload?.ok) {
+    logLine(`Ignoring unexpected health response on ${dashboardBaseUrl()}: ${JSON.stringify(payload)}`);
+  }
+  return ready;
 }
 
 async function ensureServer(context) {
   const runtime = ensureRuntimeApp(context);
   const nextConfigKey = serverConfigSignature(runtime);
-  let restartedForSettings = false;
+  let restartedForRuntime = false;
   if (serverProcess && !serverProcess.killed && serverConfigKey && serverConfigKey !== nextConfigKey) {
-    await stopServerProcess("ThreadVault settings changed. Restarting the local server.");
+    await stopServerProcess("ThreadVault settings or runtime changed. Restarting the local server.");
     lastServerError = "";
-    restartedForSettings = true;
+    restartedForRuntime = true;
   }
 
-  if (!restartedForSettings && await isServerReady()) {
+  const health = await readServerHealth();
+  if (!restartedForRuntime && healthMatches(health, runtime.fingerprint)) {
     return true;
   }
 
   if (!serverProcess || serverProcess.killed) {
+    if (health?.ok && health.app === HEALTH_APP_NAME && Number(health.port) === configuredPort() && runtime.fingerprint && health.runtimeFingerprint !== runtime.fingerprint) {
+      setServerError(`A different ThreadVault runtime is already running on ${dashboardBaseUrl()}. Stop it or change threadvault.port.`);
+      return false;
+    }
+
     const nodeRuntime = checkNodeRuntime();
     if (!nodeRuntime.ok) {
       setServerError(nodeRuntime.message);
@@ -461,6 +512,7 @@ async function ensureServer(context) {
     fs.mkdirSync(runtime.dataDir, { recursive: true });
     fs.mkdirSync(runtime.memoryDir, { recursive: true });
     logLine(`Starting server from ${runtime.root} (${runtime.mode})`);
+    logLine(`Using runtime fingerprint ${runtime.fingerprint || "unknown"}`);
     logLine(`Using Node.js ${nodeRuntime.version} at ${nodeRuntime.nodePath}`);
     logLine(`Using data directory ${runtime.dataDir}`);
     logLine(`Using memory directory ${runtime.memoryDir}`);
@@ -471,6 +523,7 @@ async function ensureServer(context) {
         ...process.env,
         THREADVAULT_PORT: String(configuredPort()),
         THREADVAULT_HOST: configuredHost(),
+        THREADVAULT_RUNTIME_FINGERPRINT: runtime.fingerprint || "",
         THREADVAULT_APP_ROOT: runtime.root,
         THREADVAULT_DATA_DIR: runtime.dataDir,
         THREADVAULT_MEMORY_DIR: runtime.memoryDir
@@ -516,7 +569,7 @@ async function ensureServer(context) {
 
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
-    if (await isServerReady()) {
+    if (await isServerReady(runtime.fingerprint)) {
       return true;
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -623,19 +676,50 @@ function postPanelMessage(panel, hostToken, payload) {
   });
 }
 
+function openTargetLabel(target) {
+  return target === "workspace" ? "workspace" : "source file";
+}
+
+function openTargetMissingMessage(target, targetPath) {
+  const label = openTargetLabel(target);
+  if (!targetPath) {
+    return `This session does not include a saved ${label} path.`;
+  }
+
+  return `The saved ${label} path no longer exists: ${targetPath}`;
+}
+
+function isWorkspaceFile(targetPath) {
+  return targetPath.toLowerCase().endsWith(".code-workspace");
+}
+
 async function openPathInVsCode(targetPath, target) {
   if (!targetPath || !fs.existsSync(targetPath)) {
-    logLine(`Open failed because path is missing: ${targetPath || "<empty>"}`);
+    const error = openTargetMissingMessage(target, targetPath);
+    logLine(`Open failed: ${error}`);
     return {
       ok: false,
-      error: "Target path does not exist."
+      error,
+      target,
+      path: targetPath || ""
     };
   }
 
   const stat = fs.statSync(targetPath);
   const targetUri = vscode.Uri.file(targetPath);
 
-  if (target === "workspace" || stat.isDirectory()) {
+  if (target === "workspace") {
+    if (!stat.isDirectory() && !isWorkspaceFile(targetPath)) {
+      const error = `The saved workspace path is not a folder or .code-workspace file: ${targetPath}`;
+      logLine(`Open failed: ${error}`);
+      return {
+        ok: false,
+        error,
+        target,
+        path: targetPath
+      };
+    }
+
     logLine(`Opening workspace path in VS Code: ${targetPath}`);
     await vscode.commands.executeCommand("vscode.openFolder", targetUri, {
       forceReuseWindow: false
@@ -644,6 +728,17 @@ async function openPathInVsCode(targetPath, target) {
     return {
       ok: true,
       message: "Workspace opened in VS Code."
+    };
+  }
+
+  if (stat.isDirectory()) {
+    const error = `The saved source path is a folder, not a transcript file: ${targetPath}`;
+    logLine(`Open failed: ${error}`);
+    return {
+      ok: false,
+      error,
+      target,
+      path: targetPath
     };
   }
 

@@ -572,6 +572,12 @@ function runStateAndExportRegression() {
         throw new Error(\`hide should clear favorite and enable hidden: \${JSON.stringify(hidden)}\`);
       }
 
+      const hiddenListAfterHide = listSessions({ archivedOnly: true });
+      const favoritesAfterHide = listSessions({ favoritesOnly: true });
+      if (hiddenListAfterHide.length !== 1 || hiddenListAfterHide[0].id !== session.id || favoritesAfterHide.length !== 0) {
+        throw new Error(\`hidden view should include hidden session and remove it from favorites: hidden=\${hiddenListAfterHide.length} favorites=\${favoritesAfterHide.length}\`);
+      }
+
       const hiddenFromConflictingPayload = updateSessionAnnotation(session.id, { favorite: true, archived: true });
       if (hiddenFromConflictingPayload.favorite || !hiddenFromConflictingPayload.archived) {
         throw new Error(\`hidden should win conflicting favorite/hidden updates: \${JSON.stringify(hiddenFromConflictingPayload)}\`);
@@ -708,9 +714,56 @@ function runServerHttpRegression() {
       import http from "node:http";
       import path from "node:path";
       import { createServer } from "./src/server.js";
+      import { upsertImportedSessions, updateSessionAnnotation } from "./src/db/repository.js";
 
       const server = createServer();
       let baseUrl = "";
+
+      const regularSession = {
+        id: "http-regular-session",
+        sourceId: "codex",
+        sourceLabel: "Codex",
+        sourceSessionId: "http-regular",
+        title: "HTTP regular session",
+        summary: "Regular session",
+        workspacePath: "C:/workspace/http",
+        workspaceName: "http",
+        createdAt: "2026-06-10T01:00:00.000Z",
+        updatedAt: "2026-06-10T02:00:00.000Z",
+        status: "ready",
+        resumeType: "thread",
+        fingerprint: "http-regular",
+        sourcePath: "C:/history/http-regular.jsonl",
+        parseConfidence: 1,
+        metadata: {},
+        messages: [{
+          id: "http-regular-message",
+          ordinal: 0,
+          role: "user",
+          content: "regular",
+          timestamp: "2026-06-10T01:00:00.000Z",
+          model: null,
+          referencedFiles: [],
+          metadata: {}
+        }]
+      };
+      const hiddenSession = {
+        ...regularSession,
+        id: "http-hidden-session",
+        sourceSessionId: "http-hidden",
+        title: "HTTP hidden session",
+        summary: "Hidden session",
+        fingerprint: "http-hidden",
+        sourcePath: "C:/history/http-hidden.jsonl",
+        messages: [{
+          ...regularSession.messages[0],
+          id: "http-hidden-message",
+          content: "hidden"
+        }]
+      };
+      upsertImportedSessions([regularSession, hiddenSession]);
+      updateSessionAnnotation(regularSession.id, { favorite: true });
+      updateSessionAnnotation(hiddenSession.id, { archived: true });
 
       function listen() {
         return new Promise((resolve, reject) => {
@@ -829,7 +882,7 @@ function runServerHttpRegression() {
           throw new Error("health should return 200, got " + health.status);
         }
         const healthPayload = JSON.parse(health.body);
-        if (!healthPayload.ok || healthPayload.app !== "ThreadVault" || !healthPayload.host || !healthPayload.port || !healthPayload.node) {
+        if (!healthPayload.ok || healthPayload.app !== "ThreadVault" || !healthPayload.host || !healthPayload.port || !healthPayload.node || typeof healthPayload.runtimeFingerprint !== "string" || healthPayload.runtimeFingerprint.length === 0) {
           throw new Error("health payload is missing diagnostics: " + health.body);
         }
 
@@ -839,6 +892,26 @@ function runServerHttpRegression() {
         }
         if (!String(healthHead.headers["content-type"] || "").startsWith("application/json")) {
           throw new Error("HEAD health should keep JSON content type");
+        }
+
+        const archivedOnly = await request("/api/sessions?archivedOnly=1");
+        if (archivedOnly.status !== 200) {
+          throw new Error("archivedOnly sessions should return 200, got " + archivedOnly.status);
+        }
+        const archivedOnlyPayload = JSON.parse(archivedOnly.body);
+        const archivedIds = archivedOnlyPayload.sessions.map((session) => session.id);
+        if (archivedIds.length !== 1 || archivedIds[0] !== hiddenSession.id || archivedOnlyPayload.sessions[0].annotation.archived !== true) {
+          throw new Error("archivedOnly should return only hidden sessions, got " + archivedOnly.body);
+        }
+
+        const favoritesOnly = await request("/api/sessions?favoritesOnly=1");
+        if (favoritesOnly.status !== 200) {
+          throw new Error("favoritesOnly sessions should return 200, got " + favoritesOnly.status);
+        }
+        const favoritesOnlyPayload = JSON.parse(favoritesOnly.body);
+        const favoriteIds = favoritesOnlyPayload.sessions.map((session) => session.id);
+        if (favoriteIds.length !== 1 || favoriteIds[0] !== regularSession.id || favoritesOnlyPayload.sessions[0].annotation.favorite !== true) {
+          throw new Error("favoritesOnly should return only non-hidden favorites, got " + favoritesOnly.body);
         }
 
         const forbidden = await request("/api/scan", {
@@ -945,7 +1018,7 @@ if (extensionPackage) {
     fail("extension/package.json should include the Other category for Marketplace listing.");
   }
 
-  for (const keyword of ["copilot", "codex", "claude", "chat", "archive", "search", "history"]) {
+  for (const keyword of ["copilot", "codex", "claude", "ai", "chat", "archive", "search", "history", "memory", "local-first"]) {
     if (!extensionPackage.keywords?.includes(keyword)) {
       fail(`extension/package.json keywords should include ${keyword}.`);
     }
@@ -1060,6 +1133,9 @@ assertFileContains("CHANGELOG.md", [
   "VSIX bundle metadata",
   "SECURITY and CONTRIBUTING guidance",
   "Regular/Favorite/Hidden state behavior",
+  "Hidden win conflicting Favorite/Hidden updates",
+  "`Copy local link`",
+  "output actions rather than session states",
   "Marketplace gallery banner metadata",
   "bundled runtime fingerprints"
 ]);
@@ -1193,8 +1269,17 @@ assertFileContains("public/app.js", [
   "function stateActionForStatus",
   "function stateButtonTabIndex",
   "function stateButtonLabel",
+  "function annotationPayloadForStatus",
+  "function filterSessionsForCurrentStatusView",
+  "state.sessions = filterSessionsForCurrentStatusView(payload.sessions || [])",
+  "params.set(\"archivedOnly\", \"1\")",
+  "params.set(\"includeArchived\", \"1\")",
   "function focusStateButton",
   "favorite: archived ? false : Boolean(annotation.favorite)",
+  "Export copy",
+  "Save note",
+  "Output actions",
+  "These actions do not change the session state",
   "statusChipHtml(annotation, { skipDefault: true })",
   "statusChipHtml(annotation, { detail: true })",
   "data-source-filter=\"${escapeHtml(card.sourceId)}\" aria-pressed=\"${card.active ? \"true\" : \"false\"}\"",
@@ -1202,6 +1287,11 @@ assertFileContains("public/app.js", [
   "const openSessionItem = (node) =>",
   "event.key === \"Enter\" || event.key === \" \"",
   "delete elements.sessionDetail.dataset.actionBusy",
+  "const actionButtons = Array.from(elements.sessionDetail.querySelectorAll(\"[data-action]\"))",
+  "const previousDisabled = new Map(actionButtons.map((actionButton) => [actionButton, actionButton.disabled]))",
+  "for (const actionButton of actionButtons)",
+  "actionButton.disabled = true",
+  "actionButton.disabled = previousDisabled.get(actionButton) || false",
   "data-action=\"state-default\"",
   "data-action=\"state-favorite\"",
   "data-action=\"state-archived\"",
@@ -1223,6 +1313,7 @@ assertFileContains("public/app.js", [
   "\"ArrowLeft\", \"ArrowUp\", \"ArrowRight\", \"ArrowDown\", \"Home\", \"End\"",
   "buttons[nextIndex]?.focus({ preventScroll: true })",
   "focusStateButton(annotationStatus(nextAnnotation))",
+  "const nextAnnotation = await saveAnnotation(session.id, annotationPayloadForStatus(nextStatus))",
   "#save-note-button",
   "button.disabled = true",
   "label.textContent = t(\"saving\")",
@@ -1266,6 +1357,12 @@ assertFileExcludes("public/app.js", [
   "archiveAction",
   "archiveConfirm",
   "archive: \"Hide\"",
+  "favoritedAction",
+  "unfavoriteAction",
+  "hideAction",
+  "Export MD",
+  "Save memory",
+  "Copy link",
   "window.confirm(",
   "window.open(",
   "const isArchived = Boolean(annotation.archived)",
@@ -1324,9 +1421,16 @@ assertFileContains("extension/extension.js", [
   "const maybeBareIpv6 = bracketless.split(\":\").length > 2",
   "parsed.hostname.replace(/^\\[(.*)\\]$/, \"$1\")",
   "function readBundleFingerprint",
+  "function computeAppFingerprint",
+  "fingerprint: runtime.fingerprint",
   ".threadvault-bundle.json",
   "currentFingerprint !== bundledFingerprint",
+  "fingerprint: computeAppFingerprint(devRoot)",
+  "fingerprint: readBundleFingerprint(targetRoot) || bundledFingerprint",
+  "THREADVAULT_RUNTIME_FINGERPRINT: runtime.fingerprint || \"\"",
   "const HEALTH_APP_NAME = \"ThreadVault\"",
+  "function healthMatches",
+  "function readServerHealth",
   "function errorMessage(error)",
   "function runCommandSafely(label, callback)",
   "const message = `${label} failed: ${errorMessage(error)}`",
@@ -1373,9 +1477,13 @@ assertFileContains("extension/extension.js", [
   "vscode.workspace.onDidChangeConfiguration",
   "event.affectsConfiguration(\"threadvault\")",
   "ThreadVault settings changed. Restarting the local server on next use.",
-  "let restartedForSettings = false",
-  "await stopServerProcess(\"ThreadVault settings changed. Restarting the local server.\")",
-  "if (!restartedForSettings && await isServerReady())",
+  "let restartedForRuntime = false",
+  "await stopServerProcess(\"ThreadVault settings or runtime changed. Restarting the local server.\")",
+  "if (!restartedForRuntime && healthMatches(health, runtime.fingerprint))",
+  "if (await isServerReady(runtime.fingerprint))",
+  "health.runtimeFingerprint !== runtime.fingerprint",
+  "Using runtime fingerprint ${runtime.fingerprint || \"unknown\"}",
+  "A different ThreadVault runtime is already running on ${dashboardBaseUrl()}. Stop it or change threadvault.port.",
   "request(\"POST\", \"/api/scan\", { timeoutMs: 120000 })",
   "return stopServerProcess(\"Stopping ThreadVault local server.\")",
   "vscode.commands.registerCommand(\"threadvault.startServer\", runCommandSafely",
@@ -1420,6 +1528,7 @@ assertFileContains("src/server.js", [
   "request.method === \"HEAD\"",
   "if (request.method === \"HEAD\")",
   "(request.method === \"GET\" || request.method === \"HEAD\") && url.pathname === \"/api/health\"",
+  "runtimeFingerprint: RUNTIME_FINGERPRINT",
   "function methodAllowedForStatic",
   "Method not allowed.",
   "function runInitialScanSoon",
@@ -1448,16 +1557,32 @@ assertFileContains("src/server.js", [
   "Cross-origin write requests are not allowed."
 ]);
 
+assertFileContains("src/config.js", [
+  "function computeAppFingerprint",
+  "RUNTIME_FINGERPRINT = String(process.env.THREADVAULT_RUNTIME_FINGERPRINT || \"\").trim() || computeAppFingerprint(APP_ROOT)"
+]);
+
+assertFileContains("scripts/verify.mjs", [
+  "http-hidden-session",
+  "request(\"/api/sessions?archivedOnly=1\")",
+  "archivedOnly should return only hidden sessions",
+  "request(\"/api/sessions?favoritesOnly=1\")",
+  "favoritesOnly should return only non-hidden favorites"
+]);
+
 assertFileContains("README.md", [
   "[![CI](https://github.com/wyh/threadvault/actions/workflows/ci.yml/badge.svg)]",
   "code --install-extension extension/threadvault-vscode-*.vsix",
   "Get-ChildItem extension\\threadvault-vscode-*.vsix",
   "git diff --name-only",
   "git diff --cached --name-only",
+  "does not upload transcripts, source paths, exports, memory notes, or the SQLite archive",
+  "marked preview for its first VS Code Marketplace release",
   "Session state is intentionally one-of-three",
   "This does not delete the source history file or the local database row.",
-  "`Export MD`: create a Markdown copy under `data/exports/`",
-  "`Save memory`: save a durable Markdown note under the memory directory",
+  "`Export copy`: create a Markdown copy under `data/exports/`",
+  "`Save note`: save a durable Markdown note under the memory directory",
+  "They do not change whether a session is `Regular`, `Favorite`, or `Hidden`",
   "`Copy local link`: copy a local-only URL",
   "See `CONTRIBUTING.md` for local setup",
   "See `SECURITY.md` for the supported security model",
@@ -1475,14 +1600,20 @@ assertFileContains("SUPPORT.md", [
 
 assertFileContains("CONTRIBUTING.md", [
   "Use Node.js 24 or newer.",
+  "there is no dependency install step for normal local development",
   "npm run prepare:extension",
   "npm run verify",
   "git diff --check",
   "git diff --name-only",
   "git diff --cached --name-only",
+  "pinned non-interactive `npx --yes @vscode/vsce@3.9.2`",
   "Do not commit private prompts, transcripts, source history files, SQLite databases, exports, memory notes, logs, screenshots with private code, or generated VSIX files.",
   "Keep session states mutually exclusive: `Regular`, `Favorite`, and `Hidden`.",
   "Preserve local-first defaults."
+]);
+
+assertFileExcludes("CONTRIBUTING.md", [
+  "npm install"
 ]);
 
 assertFileContains("SECURITY.md", [
@@ -1502,6 +1633,9 @@ assertFileContains("docs/technical-design.md", [
   "SHA-256 fingerprint",
   "same version number",
   "bundle fingerprint changes",
+  "running server signature also includes the runtime fingerprint",
+  "health endpoint returns it too",
+  "same-version VSIX installs and development source changes restart the local service",
   "Real HTTP behavior"
 ]);
 
@@ -1509,6 +1643,9 @@ assertFileContains("docs/tasks-mvp.md", [
   "This checklist reflects the current repository state",
   "Replace `publisher: \"local\"`",
   "Mutually exclusive session state",
+  "Hidden` wins conflicting Favorite/Hidden updates",
+  "Copy local link",
+  "copies a local session link",
   "real HTTP behavior"
 ]);
 
@@ -1525,6 +1662,9 @@ assertFileContains("docs/implementation-plan.md", [
   "ThreadVault has passed the initial MVP stage.",
   "Replace `publisher: \"local\"`",
   "Run `npm run package:vsix`",
+  "Markdown export, Markdown memory save, and local-only session links",
+  "state/export/memory/link regressions",
+  "Confirm `Copy local link` copies a local-only URL",
   "real HTTP behavior",
   "Keep the local-first privacy model as the default."
 ]);
@@ -1554,7 +1694,9 @@ for (const [relativePath, stalePattern] of [
 assertFileContains("extension/README.md", [
   "a session can be in exactly one state: `Regular`, `Favorite`, or `Hidden`",
   "ThreadVault does not delete the source history file",
-  "`Save memory` writes a durable Markdown note",
+  "Output actions do not change that state",
+  "`Export copy` creates a Markdown copy",
+  "`Save note` writes a durable Markdown note",
   "The generated VSIX is written to the `extension` folder.",
   "`preview`",
   "`galleryBanner`",
@@ -1565,6 +1707,9 @@ assertFileContains("extension/README.md", [
 
 assertFileContains("extension/CHANGELOG.md", [
   "Regular/Favorite/Hidden state behavior",
+  "Hidden win conflicting Favorite/Hidden updates",
+  "`Copy local link`",
+  "output actions rather than session states",
   "SECURITY and CONTRIBUTING guidance",
   "Marketplace gallery banner metadata"
 ]);

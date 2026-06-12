@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { pathToFileURL, URL } from "node:url";
 
-import { APP_HOST, APP_NAME, APP_PORT, DATA_DIR, PUBLIC_DIR } from "./config.js";
+import { APP_HOST, APP_NAME, APP_PORT, DATA_DIR, PUBLIC_DIR, RUNTIME_FINGERPRINT } from "./config.js";
 import { ensureDir } from "./utils/fs.js";
 import { runFullScan, getDashboardData, getSessionById, saveSessionAnnotation } from "./services/indexer.js";
 import { openSessionTargetInVsCode } from "./services/actions.js";
@@ -292,7 +292,8 @@ function handleApi(request, response, url) {
       app: APP_NAME,
       host: APP_HOST,
       port: APP_PORT,
-      node: process.versions.node
+      node: process.versions.node,
+      runtimeFingerprint: RUNTIME_FINGERPRINT
     });
     return;
   }

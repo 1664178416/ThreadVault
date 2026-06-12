@@ -18,7 +18,8 @@
 - Added local service security headers, request timeouts, and response-stream error handling
 - Added checks for command registration, activation events, VSIX bundle metadata, and stricter publish readiness
 - Clarified VSIX output location and local write-origin restrictions in extension documentation
-- Clarified Regular/Favorite/Hidden state behavior and the difference between Markdown export and memory-save actions
+- Clarified Regular/Favorite/Hidden state behavior, made Hidden win conflicting Favorite/Hidden updates, and renamed the copy action to `Copy local link`
+- Clarified that `Export copy`, `Save note`, and `Copy local link` are output actions rather than session states
 - Added public release references for SECURITY and CONTRIBUTING guidance
 - Aligned Marketplace gallery banner metadata with the current ThreadVault UI direction
 - Added bundled runtime fingerprints so same-version local VSIX installs refresh the copied app when bundled source changes

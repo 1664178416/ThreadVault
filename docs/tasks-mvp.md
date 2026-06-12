@@ -10,9 +10,10 @@ This checklist reflects the current repository state and the remaining work befo
 - Incremental session/message upserts with search refresh
 - Lexical full-text search with source and state filters
 - Session detail view with transcript, collapsed process/system traces, tags, notes, and source/workspace actions
-- Mutually exclusive session state: `Regular`, `Favorite`, `Hidden`
+- Mutually exclusive session state: `Regular`, `Favorite`, `Hidden`; `Hidden` wins conflicting Favorite/Hidden updates
 - Markdown export to `data/exports/`
 - Markdown memory notes to `data/memory/` or a configured memory directory
+- Local-only session links with `Copy local link`
 - VS Code extension commands for server start, embedded panel, browser dashboard, logs, and rescan
 - Configurable port, host, client host, Node path, data directory, and memory directory
 - Extension bundle preparation for VSIX packaging
@@ -29,7 +30,7 @@ Before publishing to the VS Code Marketplace:
 - Run `npm run prepare:extension`
 - Run `npm run verify`
 - Run `npm run package:vsix` and install the generated VSIX locally
-- Confirm the embedded panel starts, rescans, opens logs, exports Markdown, and saves memory notes
+- Confirm the embedded panel starts, rescans, opens logs, exports Markdown, saves memory notes, and copies a local session link
 - Confirm `git status --short` does not include `data/`, `.vsix`, SQLite, exports, memory notes, or logs
 - Run `npm run publish:vsce` only after the Publisher ID is set
 

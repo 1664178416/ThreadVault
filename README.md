@@ -6,6 +6,8 @@ ThreadVault is a local-first archive for AI coding conversations. It scans your 
 
 Everything runs on your machine. No cloud account, sync service, or hosted backend is required.
 
+ThreadVault does not upload transcripts, source paths, exports, memory notes, or the SQLite archive. The project is currently pre-1.0 and marked preview for its first VS Code Marketplace release.
+
 ## What You Can Do
 
 - Search across local AI coding conversations
@@ -50,7 +52,7 @@ npm run scan
 3. Check the source counters for Copilot, Codex, and Claude.
 4. Use search to find an old prompt, error message, file name, or project name.
 5. Select a session to read the transcript.
-6. Set the session state to `Regular`, `Favorite`, or `Hidden`, then use `Notes`, `Export MD`, `Save memory`, or `Copy local link` as needed.
+6. Set the session state to `Regular`, `Favorite`, or `Hidden`, then use `Notes`, `Export copy`, `Save note`, or `Copy local link` as needed.
 
 If no sessions appear, make sure you have used at least one supported tool locally and that its history files exist on disk.
 
@@ -82,15 +84,15 @@ Session state is intentionally one-of-three:
 - `Favorite`: keep the session visible and add it to the Favorites view.
 - `Hidden`: remove the session from Regular and Favorites views. This does not delete the source history file or the local database row.
 
-The transcript actions have different jobs:
+The transcript output actions have different jobs. They do not change whether a session is `Regular`, `Favorite`, or `Hidden`:
 
-- `Export MD`: create a Markdown copy under `data/exports/` for sharing, backup, or manual review.
-- `Save memory`: save a durable Markdown note under the memory directory for conversations worth reusing later.
+- `Export copy`: create a Markdown copy under `data/exports/` for sharing, backup, or manual review.
+- `Save note`: save a durable Markdown note under the memory directory for conversations worth reusing later.
 - `Copy local link`: copy a local-only URL that opens the dashboard directly on the selected session.
 
 ## Markdown Memory
 
-Use the `Save memory` action on a session when you want to keep a high-value conversation as a durable Markdown note.
+Use the `Save note` action on a session when you want to keep a high-value conversation as a durable Markdown note.
 
 By default, memory files are written to:
 

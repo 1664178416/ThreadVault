@@ -17,7 +17,7 @@ Current indexed sources:
 - Codex
 - Claude Code
 
-Inside the dashboard, a session can be in exactly one state: `Regular`, `Favorite`, or `Hidden`. Hidden sessions leave the regular and Favorites views, but ThreadVault does not delete the source history file. `Export MD` creates a Markdown copy for backup or sharing, `Save memory` writes a durable Markdown note to the configured memory directory, and `Copy local link` copies a local-only URL for the selected session.
+Inside the dashboard, a session can be in exactly one state: `Regular`, `Favorite`, or `Hidden`. Hidden sessions leave the regular and Favorites views, but ThreadVault does not delete the source history file. Output actions do not change that state: `Export copy` creates a Markdown copy for backup or sharing, `Save note` writes a durable Markdown note to the configured memory directory, and `Copy local link` copies a local-only URL for the selected session.
 
 ## Local Development
 
@@ -81,5 +81,7 @@ Before publishing, update at least these fields in `extension/package.json`:
 - `icon`
 - `preview`
 - `galleryBanner`
+
+Keep the Marketplace keywords focused on local AI history discovery, including `ai`, `chat`, `archive`, `search`, `memory`, and `local-first`.
 
 Also keep `LICENSE`, `CHANGELOG.md`, `SUPPORT.md`, root `SECURITY.md`, and root `CONTRIBUTING.md` aligned with your public repository and release plan.

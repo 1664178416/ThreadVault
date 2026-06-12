@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 
@@ -34,9 +36,42 @@ function normalizeHostSetting(value, fallback = DEFAULT_HOST) {
   return fallback;
 }
 
+function listFilesRecursive(rootPath) {
+  const files = [];
+  for (const entry of fs.readdirSync(rootPath, { withFileTypes: true })) {
+    const entryPath = path.join(rootPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listFilesRecursive(entryPath));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+  return files.sort((a, b) => a.localeCompare(b));
+}
+
+function computeAppFingerprint(rootPath) {
+  try {
+    const hash = crypto.createHash("sha256");
+    for (const entryName of ["src", "public"]) {
+      const entryRoot = path.join(rootPath, entryName);
+      for (const filePath of listFilesRecursive(entryRoot)) {
+        const relativePath = path.relative(rootPath, filePath).replaceAll(path.sep, "/");
+        hash.update(relativePath);
+        hash.update("\0");
+        hash.update(fs.readFileSync(filePath));
+        hash.update("\0");
+      }
+    }
+    return hash.digest("hex");
+  } catch {
+    return "";
+  }
+}
+
 export const APP_NAME = "ThreadVault";
 export const APP_PORT = parsePort(process.env.THREADVAULT_PORT);
 export const APP_HOST = normalizeHostSetting(process.env.THREADVAULT_HOST);
+export const RUNTIME_FINGERPRINT = String(process.env.THREADVAULT_RUNTIME_FINGERPRINT || "").trim() || computeAppFingerprint(APP_ROOT);
 export const DATA_DIR = process.env.THREADVAULT_DATA_DIR || path.join(APP_ROOT, "data");
 export const DB_PATH = path.join(DATA_DIR, "threadvault.sqlite");
 export const EXPORT_DIR = path.join(DATA_DIR, "exports");

@@ -10,9 +10,9 @@ Implemented today:
 - SQLite persistence with FTS5 search
 - Copilot Chat, Codex, and Claude Code adapters
 - Tags, notes, regular/favorite/hidden session state
-- Markdown export and Markdown memory save
+- Markdown export, Markdown memory save, and local-only session links
 - VS Code extension with local server lifecycle, embedded panel, browser open, logs, and rescan
-- Verification gate covering syntax, package contents, bundle sync, security checks, state/export/memory regressions, and real HTTP behavior
+- Verification gate covering syntax, package contents, bundle sync, security checks, state/export/memory/link regressions, i18n integrity, and real HTTP behavior
 
 ## Release Readiness
 
@@ -25,8 +25,9 @@ Before the first public Marketplace release:
 5. Run `npm run package:vsix`.
 6. Install the generated VSIX and manually check the five extension commands.
 7. Confirm export and memory files are written to expected local folders.
-8. Confirm `git status --short` contains no local data, logs, SQLite files, exports, memory notes, or VSIX files.
-9. Run `npm run publish:vsce` only after the Publisher ID is configured.
+8. Confirm `Copy local link` copies a local-only URL for the selected session.
+9. Confirm `git status --short` contains no local data, logs, SQLite files, exports, memory notes, or VSIX files.
+10. Run `npm run publish:vsce` only after the Publisher ID is configured.
 
 ## Near-Term Improvements
 

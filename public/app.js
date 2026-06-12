@@ -33,14 +33,13 @@ const I18N = {
     drawerResize: "Resize session library",
     drawerResizeTitle: "Drag or use arrow keys to resize the session library",
     empty: "Empty",
-    export: "Export MD",
-    exportTitle: "Create a Markdown copy in the exports folder for sharing or backup.",
+    export: "Export copy",
+    exportTitle: "Create a standalone Markdown copy in the exports folder for sharing or backup.",
     exportedTo: "Exported to",
     exporting: "Exporting",
     exportFailed: "Export failed.",
     favoriteAction: "Favorite",
     favoriteTitle: "Set this session to Favorite. It stays visible and appears in Favorites.",
-    favoritedAction: "Favorited",
     favorites: "Favorites",
     filters: "Filters",
     language: "Language",
@@ -48,10 +47,10 @@ const I18N = {
     librarySnapshot: "Library snapshot",
     libraryTotal: "Library total",
     loadFailed: "Failed to load",
-    memoryFailed: "Memory save failed.",
-    memorySaved: "Saved to memory",
+    memoryFailed: "Memory note save failed.",
+    memorySaved: "Memory note saved to",
     messages: "messages",
-    saveMemory: "Save memory",
+    saveMemory: "Save note",
     saveMemoryTitle: "Save this session as a reusable Markdown memory note in the configured memory directory.",
     openInBrowser: "Open in browser",
     opening: "Opening",
@@ -62,10 +61,9 @@ const I18N = {
     openSourceFailed: "Unable to open source file.",
     openWorkspaceFailed: "Unable to open workspace.",
     openActions: "Open",
-    outputActions: "Output",
-    outputActionsHelp: "Export MD writes a Markdown copy, Save memory writes a reusable memory note, and Copy local link copies a local URL.",
+    outputActions: "Output actions",
+    outputActionsHelp: "These actions do not change the session state: Export copy writes a Markdown file, Save note writes a reusable memory note, and Copy local link copies a local URL.",
     processRole: "Process",
-    hideAction: "Hide",
     noSessionSelected: "No session is selected.",
     noSessionsMatched: "Nothing matched the current view.",
     noSessions: "No sessions",
@@ -77,7 +75,6 @@ const I18N = {
     railBrand: "Vault",
     rawStream: "Raw stream",
     rescan: "Rescan",
-    restoreAction: "Restore",
     restoreTitle: "Return this session to the main list.",
     requestFailed: "Request failed",
     requestTimedOut: "Request timed out. Check that the local ThreadVault service is still running.",
@@ -90,7 +87,7 @@ const I18N = {
     scanSkipped: "skipped",
     scanUpdated: "updated",
     saving: "Saving",
-    savingMemory: "Saving",
+    savingMemory: "Saving note",
     scanning: "Scanning",
     search: "Search",
     searchPrefix: "Search",
@@ -122,13 +119,11 @@ const I18N = {
     themeDim: "Graphite",
     themeLight: "Light",
     transcript: "Transcript",
-    unfavoriteAction: "Unfavorite",
     unknown: "unknown",
     unknownTime: "Unknown time",
     updated: "Updated",
     userRole: "User",
     waitingForSessions: "Waiting for local sessions to load.",
-    withArchived: "Include hidden",
     workspace: "Workspace",
     workspaceMissing: "Workspace path is missing.",
     workspaceOpenRequested: "Workspace open request sent."
@@ -152,14 +147,13 @@ const I18N = {
     drawerResize: "\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
     drawerResizeTitle: "\u62d6\u52a8\u6216\u4f7f\u7528\u65b9\u5411\u952e\u8c03\u6574\u4f1a\u8bdd\u5e93\u5bbd\u5ea6",
     empty: "\u7a7a",
-    export: "\u5bfc\u51fa MD",
-    exportTitle: "\u5728\u5bfc\u51fa\u76ee\u5f55\u4e2d\u751f\u6210 Markdown \u526f\u672c\uff0c\u9002\u5408\u5206\u4eab\u6216\u5907\u4efd\u3002",
+    export: "\u5bfc\u51fa\u526f\u672c",
+    exportTitle: "\u5728\u5bfc\u51fa\u76ee\u5f55\u4e2d\u751f\u6210\u72ec\u7acb\u7684 Markdown \u526f\u672c\uff0c\u9002\u5408\u5206\u4eab\u6216\u5907\u4efd\u3002",
     exportedTo: "\u5df2\u5bfc\u51fa\u5230",
     exporting: "\u5bfc\u51fa\u4e2d",
     exportFailed: "\u5bfc\u51fa\u5931\u8d25\u3002",
     favoriteAction: "\u6536\u85cf",
     favoriteTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u8bbe\u4e3a\u6536\u85cf\u72b6\u6001\uff0c\u5b83\u4f1a\u4fdd\u6301\u53ef\u89c1\u5e76\u51fa\u73b0\u5728\u6536\u85cf\u89c6\u56fe\u4e2d\u3002",
-    favoritedAction: "\u5df2\u6536\u85cf",
     favorites: "\u6536\u85cf",
     filters: "\u8fc7\u6ee4",
     language: "\u8bed\u8a00",
@@ -167,10 +161,10 @@ const I18N = {
     librarySnapshot: "\u8d44\u6599\u5e93\u6982\u89c8",
     libraryTotal: "\u6d88\u606f\u603b\u91cf",
     loadFailed: "\u52a0\u8f7d\u5931\u8d25",
-    memoryFailed: "\u6c89\u6dc0\u5931\u8d25\u3002",
-    memorySaved: "\u5df2\u6c89\u6dc0\u5230",
+    memoryFailed: "\u8bb0\u5fc6\u7b14\u8bb0\u4fdd\u5b58\u5931\u8d25\u3002",
+    memorySaved: "\u8bb0\u5fc6\u7b14\u8bb0\u5df2\u4fdd\u5b58\u5230",
     messages: "\u6761\u6d88\u606f",
-    saveMemory: "\u6c89\u6dc0\u8bb0\u5fc6",
+    saveMemory: "\u4fdd\u5b58\u8bb0\u5fc6",
     saveMemoryTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u4fdd\u5b58\u4e3a\u53ef\u957f\u671f\u590d\u7528\u7684 Markdown \u8bb0\u5fc6\uff0c\u5199\u5165\u5df2\u914d\u7f6e\u7684\u8bb0\u5fc6\u76ee\u5f55\u3002",
     openInBrowser: "\u5728\u6d4f\u89c8\u5668\u6253\u5f00",
     opening: "\u6253\u5f00\u4e2d",
@@ -181,10 +175,9 @@ const I18N = {
     openSourceFailed: "\u65e0\u6cd5\u6253\u5f00\u6e90\u6587\u4ef6\u3002",
     openWorkspaceFailed: "\u65e0\u6cd5\u6253\u5f00\u5de5\u4f5c\u533a\u3002",
     openActions: "\u6253\u5f00",
-    outputActions: "\u8f93\u51fa",
-    outputActionsHelp: "\u5bfc\u51fa MD \u4f1a\u5199\u5165 Markdown \u526f\u672c\uff0c\u6c89\u6dc0\u8bb0\u5fc6\u4f1a\u5199\u5165\u53ef\u590d\u7528\u7684\u8bb0\u5fc6\u7b14\u8bb0\uff0c\u590d\u5236\u672c\u5730\u94fe\u63a5\u4f1a\u590d\u5236\u672c\u673a URL\u3002",
+    outputActions: "\u8f93\u51fa\u52a8\u4f5c",
+    outputActionsHelp: "\u8fd9\u7ec4\u52a8\u4f5c\u4e0d\u4f1a\u6539\u53d8\u4f1a\u8bdd\u72b6\u6001\uff1a\u5bfc\u51fa\u526f\u672c\u4f1a\u5199\u5165 Markdown \u6587\u4ef6\uff0c\u4fdd\u5b58\u8bb0\u5fc6\u4f1a\u5199\u5165\u53ef\u590d\u7528\u7684\u8bb0\u5fc6\u7b14\u8bb0\uff0c\u590d\u5236\u672c\u5730\u94fe\u63a5\u4f1a\u590d\u5236\u672c\u673a URL\u3002",
     processRole: "\u8fc7\u7a0b",
-    hideAction: "\u9690\u85cf",
     noSessionSelected: "\u672a\u9009\u62e9\u4f1a\u8bdd\u3002",
     noSessionsMatched: "\u5f53\u524d\u89c6\u56fe\u6ca1\u6709\u5339\u914d\u7ed3\u679c\u3002",
     noSessions: "\u6ca1\u6709\u4f1a\u8bdd",
@@ -196,7 +189,6 @@ const I18N = {
     railBrand: "Vault",
     rawStream: "\u539f\u59cb\u6d41",
     rescan: "\u91cd\u65b0\u626b\u63cf",
-    restoreAction: "\u6062\u590d",
     restoreTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u653e\u56de\u4e3b\u5217\u8868\u3002",
     requestFailed: "\u8bf7\u6c42\u5931\u8d25",
     requestTimedOut: "\u8bf7\u6c42\u8d85\u65f6\u3002\u8bf7\u786e\u8ba4\u672c\u5730 ThreadVault \u670d\u52a1\u4ecd\u5728\u8fd0\u884c\u3002",
@@ -209,7 +201,7 @@ const I18N = {
     scanSkipped: "\u8df3\u8fc7",
     scanUpdated: "\u66f4\u65b0",
     saving: "\u4fdd\u5b58\u4e2d",
-    savingMemory: "\u6c89\u6dc0\u4e2d",
+    savingMemory: "\u4fdd\u5b58\u8bb0\u5fc6\u4e2d",
     scanning: "\u626b\u63cf\u4e2d",
     search: "\u641c\u7d22",
     searchPrefix: "\u641c\u7d22",
@@ -241,13 +233,11 @@ const I18N = {
     themeDim: "\u77f3\u58a8",
     themeLight: "\u4eae\u8272",
     transcript: "\u8f6c\u5f55",
-    unfavoriteAction: "\u53d6\u6d88\u6536\u85cf",
     unknown: "\u672a\u77e5",
     unknownTime: "\u672a\u77e5\u65f6\u95f4",
     updated: "\u66f4\u65b0",
     userRole: "\u7528\u6237",
     waitingForSessions: "\u6b63\u5728\u7b49\u5f85\u672c\u5730\u4f1a\u8bdd\u52a0\u8f7d\u3002",
-    withArchived: "\u5305\u542b\u9690\u85cf",
     workspace: "\u5de5\u4f5c\u533a",
     workspaceMissing: "\u7f3a\u5c11\u5de5\u4f5c\u533a\u8def\u5f84\u3002",
     workspaceOpenRequested: "\u5de5\u4f5c\u533a\u6253\u5f00\u8bf7\u6c42\u5df2\u53d1\u9001\u3002"
@@ -363,13 +353,13 @@ const ICON_LABELS = {
   close: "Close",
   codex: "Codex",
   copilot: "Copilot",
-  export: "Export",
+  export: "Export copy",
   favorite: "Favorite",
   favoriteFilled: "Favorited",
   filter: "Filter",
   language: "Language",
   link: "Copy local link",
-  memory: "Save memory",
+  memory: "Save note",
   messages: "Messages",
   note: "Notes",
   openSource: "Source file",
@@ -402,7 +392,7 @@ const ICON_LABEL_KEYS = {
   openSource: "sourceFile",
   overview: "overview",
   process: "processRole",
-  restore: "restoreAction",
+  restore: "statusDefault",
   scan: "rescan",
   search: "search",
   sessions: "sessions",
@@ -713,6 +703,27 @@ function stateButtonLabel(currentStatus, status) {
     return t("statusHidden");
   }
   return t("statusDefault");
+}
+
+function annotationPayloadForStatus(status) {
+  if (status === "favorite") {
+    return {
+      favorite: true,
+      archived: false
+    };
+  }
+
+  if (status === "archived") {
+    return {
+      favorite: false,
+      archived: true
+    };
+  }
+
+  return {
+    favorite: false,
+    archived: false
+  };
 }
 
 function focusStateButton(status) {
@@ -1669,6 +1680,19 @@ function setStatusView(view) {
   }
 }
 
+function filterSessionsForCurrentStatusView(sessions = []) {
+  const view = currentStatusView();
+  if (view === "favorites") {
+    return sessions.filter((session) => annotationStatus(session.annotation) === "favorite");
+  }
+
+  if (view === "archived") {
+    return sessions.filter((session) => annotationStatus(session.annotation) === "archived");
+  }
+
+  return sessions;
+}
+
 function renderStats(stats) {
   state.latestStats = stats;
   const sourceCards = [
@@ -2097,10 +2121,14 @@ function renderSessionDetail(session) {
     const status = actionStatusElement();
     const action = button.getAttribute("data-action");
     const originalLabel = button.querySelector("span:last-child")?.textContent || "";
+    const actionButtons = Array.from(elements.sessionDetail.querySelectorAll("[data-action]"));
+    const previousDisabled = new Map(actionButtons.map((actionButton) => [actionButton, actionButton.disabled]));
 
     const setBusy = (text) => {
       elements.sessionDetail.dataset.actionBusy = "1";
-      button.disabled = true;
+      for (const actionButton of actionButtons) {
+        actionButton.disabled = true;
+      }
       const label = button.querySelector("span:last-child");
       if (label) {
         label.textContent = text;
@@ -2109,7 +2137,9 @@ function renderSessionDetail(session) {
 
     const resetBusy = () => {
       delete elements.sessionDetail.dataset.actionBusy;
-      button.disabled = false;
+      for (const actionButton of actionButtons) {
+        actionButton.disabled = previousDisabled.get(actionButton) || false;
+      }
       const label = button.querySelector("span:last-child");
       if (label) {
         label.textContent = originalLabel;
@@ -2128,14 +2158,14 @@ function renderSessionDetail(session) {
           ? await runHostAction("threadvault-open-path", {
             path: session.sourcePath,
             target: "source"
-          })
+          }, 15000)
           : await postJson("/api/open", {
             sessionId: session.id,
             target: "source"
           });
 
         if (!result?.ok) {
-          showToast(result?.error || t("openSourceFailed"), "warning");
+          showActionError(result?.error || t("openSourceFailed"), status);
         } else {
           const message = result.message || t("sourceOpened");
           if (status) {
@@ -2163,14 +2193,14 @@ function renderSessionDetail(session) {
           ? await runHostAction("threadvault-open-path", {
             path: session.workspacePath,
             target: "workspace"
-          })
+          }, 15000)
           : await postJson("/api/open", {
             sessionId: session.id,
             target: "workspace"
           });
 
         if (!result?.ok) {
-          showToast(result?.error || t("openWorkspaceFailed"), "warning");
+          showActionError(result?.error || t("openWorkspaceFailed"), status);
         } else {
           const message = result.message || t("workspaceOpenRequested");
           if (status) {
@@ -2186,61 +2216,20 @@ function renderSessionDetail(session) {
       return;
     }
 
-    if (action === "state-default") {
-      if (currentStatus === "default") {
+    const statusByAction = {
+      "state-default": "default",
+      "state-favorite": "favorite",
+      "state-archived": "archived"
+    };
+    const nextStatus = statusByAction[action];
+    if (nextStatus) {
+      if (currentStatus === nextStatus) {
         return;
       }
 
       try {
         setBusy(t("saving"));
-        const nextAnnotation = await saveAnnotation(session.id, {
-          favorite: false,
-          archived: false
-        });
-        const message = statusSavedMessage(nextAnnotation);
-        showToast(message, "success");
-        focusStateButton(annotationStatus(nextAnnotation));
-      } catch (error) {
-        showActionError(error, status);
-      } finally {
-        resetBusy();
-      }
-      return;
-    }
-
-    if (action === "state-favorite") {
-      if (currentStatus === "favorite") {
-        return;
-      }
-
-      try {
-        setBusy(t("saving"));
-        const nextAnnotation = await saveAnnotation(session.id, {
-          favorite: true,
-          archived: false
-        });
-        const message = statusSavedMessage(nextAnnotation);
-        showToast(message, "success");
-        focusStateButton(annotationStatus(nextAnnotation));
-      } catch (error) {
-        showActionError(error, status);
-      } finally {
-        resetBusy();
-      }
-      return;
-    }
-
-    if (action === "state-archived") {
-      if (currentStatus === "archived") {
-        return;
-      }
-
-      try {
-        setBusy(t("saving"));
-        const nextAnnotation = await saveAnnotation(session.id, {
-          favorite: false,
-          archived: true
-        });
+        const nextAnnotation = await saveAnnotation(session.id, annotationPayloadForStatus(nextStatus));
         const message = statusSavedMessage(nextAnnotation);
         showToast(message, "success");
         focusStateButton(annotationStatus(nextAnnotation));
@@ -2355,6 +2344,7 @@ async function loadSessions() {
   }
   if (state.archivedOnly) {
     params.set("archivedOnly", "1");
+    params.set("includeArchived", "1");
   } else if (state.includeArchived) {
     params.set("includeArchived", "1");
   }
@@ -2365,7 +2355,7 @@ async function loadSessions() {
     return;
   }
 
-  state.sessions = payload.sessions || [];
+  state.sessions = filterSessionsForCurrentStatusView(payload.sessions || []);
   renderStats(payload.stats || {});
 
   const urlSessionId = sessionIdFromUrl();
