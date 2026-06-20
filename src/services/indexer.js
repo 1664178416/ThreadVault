@@ -1,5 +1,6 @@
 import { scanAllSources } from "../adapters/index.js";
 import { getStats, getSessionDetail, listSessions, updateSessionAnnotation, upsertImportedSessions } from "../db/repository.js";
+import { safeErrorMessage } from "../utils/text.js";
 
 function summarizeSourceErrors(sourceStats = []) {
   const sourceErrors = sourceStats
@@ -7,7 +8,7 @@ function summarizeSourceErrors(sourceStats = []) {
     .map((source) => ({
       sourceId: source.sourceId,
       sourceLabel: source.sourceLabel,
-      error: source.error
+      error: safeErrorMessage(source.error, "Source scan failed.")
     }));
 
   return {
@@ -24,7 +25,7 @@ export function runFullScan() {
   return {
     ...writeStats,
     ...sourceErrorStats,
-    sourceStats,
+    sourceStats: sanitizeSourceStats(sourceStats),
     stats: getStats()
   };
 }
@@ -42,4 +43,11 @@ export function getSessionById(sessionId) {
 
 export function saveSessionAnnotation(sessionId, updates) {
   return updateSessionAnnotation(sessionId, updates);
+}
+
+function sanitizeSourceStats(sourceStats = []) {
+  return sourceStats.map((source) => ({
+    ...source,
+    error: source.error ? safeErrorMessage(source.error, "Source scan failed.") : null
+  }));
 }

@@ -1,4 +1,10 @@
 import { getDatabase } from "./database.js";
+import { redactLocalPath, safeErrorMessage, snippet } from "../utils/text.js";
+
+const MAX_TAGS = 20;
+const MAX_TAG_LENGTH = 64;
+const MAX_NOTE_TEXT_LENGTH = 20000;
+const MAX_SOURCE_ID_LENGTH = 128;
 
 function json(value) {
   return JSON.stringify(value ?? {});
@@ -9,17 +15,15 @@ function nowIso() {
 }
 
 function buildFtsQuery(query) {
-  const terms = query
-    .trim()
-    .split(/\s+/)
-    .map((term) => term.replace(/[^\p{L}\p{N}_-]+/gu, " ").trim())
-    .filter((term) => /[\p{L}\p{N}_]/u.test(term));
+  const terms = Array.from(String(query || "").matchAll(/[\p{L}\p{N}_][\p{L}\p{N}_-]*/gu), (match) => match[0])
+    .filter((term) => /[\p{L}\p{N}_]/u.test(term))
+    .slice(0, 12);
 
   if (terms.length === 0) {
     return "";
   }
 
-  return terms.map((term) => `"${term}"`).join(" AND ");
+  return terms.map((term) => `"${term.replaceAll("\"", "\"\"")}"*`).join(" AND ");
 }
 
 function normalizeTags(tags) {
@@ -31,7 +35,7 @@ function normalizeTags(tags) {
   const seen = new Set();
 
   for (const tag of tags) {
-    const text = String(tag || "").trim();
+    const text = String(tag || "").replace(/\s+/g, " ").trim().slice(0, MAX_TAG_LENGTH);
     const key = text.toLocaleLowerCase();
     if (!text || seen.has(key)) {
       continue;
@@ -39,12 +43,20 @@ function normalizeTags(tags) {
 
     seen.add(key);
     normalized.push(text);
-    if (normalized.length >= 20) {
+    if (normalized.length >= MAX_TAGS) {
       break;
     }
   }
 
   return normalized;
+}
+
+function normalizeAnnotationNote(value) {
+  return String(value || "").trim().slice(0, MAX_NOTE_TEXT_LENGTH);
+}
+
+function annotationTagsEqual(left, right) {
+  return JSON.stringify(left || []) === JSON.stringify(right || []);
 }
 
 function optionalBoolean(value) {
@@ -55,12 +67,134 @@ function normalizeQuery(value) {
   return String(value || "").trim().slice(0, 500);
 }
 
+function escapeLikeQuery(value) {
+  return `%${String(value || "").replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+}
+
 function normalizeLimit(value, fallback = 200, maximum = 500) {
   const limit = Number(value || fallback);
   if (!Number.isInteger(limit) || limit <= 0) {
     return fallback;
   }
   return Math.min(limit, maximum);
+}
+
+function normalizeSourceId(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const sourceId = value.trim();
+  if (!sourceId) {
+    return "";
+  }
+
+  if (sourceId.length > MAX_SOURCE_ID_LENGTH || /[\u0000-\u001f\u007f]/u.test(sourceId)) {
+    return null;
+  }
+
+  return sourceId;
+}
+
+function fallbackSnippetTerms(query) {
+  const normalized = normalizeQuery(query);
+  const terms = normalized
+    ? [normalized, ...Array.from(normalized.matchAll(/[\p{L}\p{N}_][\p{L}\p{N}_-]*/gu), (match) => match[0])]
+    : [];
+  const seen = new Set();
+
+  return terms
+    .map((term) => term.trim())
+    .filter(Boolean)
+    .filter((term) => {
+      const key = term.toLocaleLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+function indexOfInsensitive(value, term) {
+  return String(value || "").toLocaleLowerCase().indexOf(String(term || "").toLocaleLowerCase());
+}
+
+function highlightFallbackSnippet(value, terms) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const firstMatch = terms
+    .map((term) => ({ term, index: indexOfInsensitive(normalized, term) }))
+    .filter((match) => match.index >= 0)
+    .sort((left, right) => left.index - right.index || right.term.length - left.term.length)[0];
+
+  if (!firstMatch) {
+    return snippet(normalized, 180);
+  }
+
+  const windowStart = Math.max(0, firstMatch.index - 72);
+  const windowEnd = Math.min(normalized.length, firstMatch.index + firstMatch.term.length + 96);
+  let fragment = normalized.slice(windowStart, windowEnd);
+  const prefix = windowStart > 0 ? "... " : "";
+  const suffix = windowEnd < normalized.length ? " ..." : "";
+  const lowerFragment = fragment.toLocaleLowerCase();
+  const ranges = [];
+
+  for (const term of [...terms].sort((left, right) => right.length - left.length)) {
+    const lowerTerm = term.toLocaleLowerCase();
+    let searchFrom = 0;
+    while (searchFrom < lowerFragment.length) {
+      const matchIndex = lowerFragment.indexOf(lowerTerm, searchFrom);
+      if (matchIndex < 0) {
+        break;
+      }
+
+      const start = matchIndex;
+      const end = start + term.length;
+      const overlaps = ranges.some((range) => start < range.end && end > range.start);
+      if (!overlaps) {
+        ranges.push({ start, end });
+      }
+      searchFrom = end;
+    }
+  }
+
+  for (const range of ranges.sort((left, right) => right.start - left.start)) {
+    fragment = `${fragment.slice(0, range.start)}<mark>${fragment.slice(range.start, range.end)}</mark>${fragment.slice(range.end)}`;
+  }
+
+  return `${prefix}${fragment}${suffix}`;
+}
+
+function buildFallbackSearchSnippet(row, query) {
+  const terms = fallbackSnippetTerms(query);
+  if (terms.length === 0) {
+    return null;
+  }
+
+  const values = [
+    row.title,
+    row.summary,
+    row.noteText,
+    row.workspaceName,
+    row.tagsJson,
+    row.fallbackMessageContent,
+    row.fallbackReferencedFiles,
+    row.fallbackModel
+  ];
+
+  for (const value of values) {
+    const highlighted = highlightFallbackSnippet(value, terms);
+    if (highlighted.includes("<mark>")) {
+      return highlighted;
+    }
+  }
+
+  return null;
 }
 
 function defaultAnnotation(sessionId) {
@@ -276,8 +410,8 @@ export function upsertImportedSessions(sessions) {
       if (stats.errors.length < 20) {
         stats.errors.push({
           sessionId: session?.id || "",
-          sourcePath: session?.sourcePath || "",
-          error: String(error.message || error)
+          sourcePath: redactLocalPath(session?.sourcePath),
+          error: safeErrorMessage(error, "Session import failed.")
         });
       }
     }
@@ -297,14 +431,19 @@ export function listSessions({
   const db = getDatabase();
   const normalizedQuery = normalizeQuery(query);
   const normalizedLimit = normalizeLimit(limit);
+  const normalizedSourceId = normalizeSourceId(sourceId);
+  if (normalizedSourceId === null) {
+    return [];
+  }
+
   const archivedClause = archivedOnly
     ? "AND COALESCE(a.archived, 0) = 1"
     : includeArchived
       ? ""
       : "AND COALESCE(a.archived, 0) = 0";
   const favoriteClause = favoritesOnly ? "AND COALESCE(a.favorite, 0) = 1 AND COALESCE(a.archived, 0) = 0" : "";
-  const sourceClauseFts = sourceId ? "AND s.source_id = ?" : "";
-  const sourceClausePlain = sourceId ? "AND sessions.source_id = ?" : "";
+  const sourceClauseFts = normalizedSourceId ? "AND s.source_id = ?" : "";
+  const sourceClausePlain = normalizedSourceId ? "AND sessions.source_id = ?" : "";
 
   if (normalizedQuery) {
     const ftsQuery = buildFtsQuery(normalizedQuery);
@@ -346,7 +485,7 @@ export function listSessions({
         ORDER BY rank
         LIMIT ?
       `);
-      const params = sourceId ? [ftsQuery, sourceId, normalizedLimit] : [ftsQuery, normalizedLimit];
+      const params = normalizedSourceId ? [ftsQuery, normalizedSourceId, normalizedLimit] : [ftsQuery, normalizedLimit];
       return statement.all(...params).map(deserializeSessionRow);
     } catch {
       const fallback = db.prepare(`
@@ -370,26 +509,103 @@ export function listSessions({
           COALESCE(a.archived, 0) AS archived,
           COALESCE(a.tags_json, '[]') AS tagsJson,
           COALESCE(a.note_text, '') AS noteText,
-          COALESCE(a.updated_at, '') AS annotationUpdatedAt
+          COALESCE(a.updated_at, '') AS annotationUpdatedAt,
+          (
+            CASE WHEN sessions.title LIKE ? ESCAPE '\\' THEN 80 ELSE 0 END +
+            CASE WHEN COALESCE(a.tags_json, '[]') LIKE ? ESCAPE '\\' THEN 70 ELSE 0 END +
+            CASE WHEN sessions.summary LIKE ? ESCAPE '\\' THEN 55 ELSE 0 END +
+            CASE WHEN COALESCE(a.note_text, '') LIKE ? ESCAPE '\\' THEN 45 ELSE 0 END +
+            CASE WHEN sessions.workspace_name LIKE ? ESCAPE '\\' THEN 35 ELSE 0 END +
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM messages m
+              WHERE m.session_id = sessions.id
+              AND m.content LIKE ? ESCAPE '\\'
+            ) THEN 30 ELSE 0 END +
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM messages m
+              WHERE m.session_id = sessions.id
+              AND m.referenced_files_json LIKE ? ESCAPE '\\'
+            ) THEN 25 ELSE 0 END +
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM messages m
+              WHERE m.session_id = sessions.id
+              AND COALESCE(m.model, '') LIKE ? ESCAPE '\\'
+            ) THEN 20 ELSE 0 END
+          ) AS fallbackRank,
+          (
+            SELECT m.content
+            FROM messages m
+            WHERE m.session_id = sessions.id
+            AND m.content LIKE ? ESCAPE '\\'
+            ORDER BY m.ordinal ASC
+            LIMIT 1
+          ) AS fallbackMessageContent,
+          (
+            SELECT m.referenced_files_json
+            FROM messages m
+            WHERE m.session_id = sessions.id
+            AND m.referenced_files_json LIKE ? ESCAPE '\\'
+            ORDER BY m.ordinal ASC
+            LIMIT 1
+          ) AS fallbackReferencedFiles,
+          (
+            SELECT m.model
+            FROM messages m
+            WHERE m.session_id = sessions.id
+            AND COALESCE(m.model, '') LIKE ? ESCAPE '\\'
+            ORDER BY m.ordinal ASC
+            LIMIT 1
+          ) AS fallbackModel
         FROM sessions
         LEFT JOIN session_annotations a ON a.session_id = sessions.id
         WHERE (
-          sessions.title LIKE ? OR
-          sessions.summary LIKE ? OR
-          COALESCE(a.note_text, '') LIKE ? OR
-          sessions.workspace_name LIKE ?
+          sessions.title LIKE ? ESCAPE '\\' OR
+          sessions.summary LIKE ? ESCAPE '\\' OR
+          COALESCE(a.note_text, '') LIKE ? ESCAPE '\\' OR
+          sessions.workspace_name LIKE ? ESCAPE '\\' OR
+          COALESCE(a.tags_json, '[]') LIKE ? ESCAPE '\\' OR
+          EXISTS (
+            SELECT 1
+            FROM messages m
+            WHERE m.session_id = sessions.id
+            AND (
+              m.content LIKE ? ESCAPE '\\' OR
+              m.referenced_files_json LIKE ? ESCAPE '\\' OR
+              COALESCE(m.model, '') LIKE ? ESCAPE '\\'
+            )
+          )
         )
         ${archivedClause}
         ${favoriteClause}
         ${sourceClausePlain}
-        ORDER BY COALESCE(sessions.updated_at, sessions.created_at) DESC
+        ORDER BY fallbackRank DESC, COALESCE(sessions.updated_at, sessions.created_at) DESC
         LIMIT ?
       `);
-      const likeQuery = `%${normalizedQuery}%`;
-      const params = sourceId
-        ? [likeQuery, likeQuery, likeQuery, likeQuery, sourceId, normalizedLimit]
-        : [likeQuery, likeQuery, likeQuery, likeQuery, normalizedLimit];
-      return fallback.all(...params).map(deserializeSessionRow);
+      const likeQuery = escapeLikeQuery(normalizedQuery);
+      const fallbackRankParams = Array(8).fill(likeQuery);
+      const fallbackSnippetParams = Array(3).fill(likeQuery);
+      const fallbackMatchParams = Array(8).fill(likeQuery);
+      const params = normalizedSourceId
+        ? [
+            ...fallbackRankParams,
+            ...fallbackSnippetParams,
+            ...fallbackMatchParams,
+            normalizedSourceId,
+            normalizedLimit
+          ]
+        : [
+            ...fallbackRankParams,
+            ...fallbackSnippetParams,
+            ...fallbackMatchParams,
+            normalizedLimit
+          ];
+      return fallback.all(...params).map((row) => deserializeSessionRow({
+        ...row,
+        searchSnippet: buildFallbackSearchSnippet(row, normalizedQuery)
+      }));
     }
   }
 
@@ -425,7 +641,7 @@ export function listSessions({
     LIMIT ?
   `);
 
-  const params = sourceId ? [sourceId, normalizedLimit] : [normalizedLimit];
+  const params = normalizedSourceId ? [normalizedSourceId, normalizedLimit] : [normalizedLimit];
   return statement.all(...params).map(deserializeSessionRow);
 }
 
@@ -567,9 +783,19 @@ export function updateSessionAnnotation(sessionId, updates = {}) {
     favorite: nextFavorite,
     archived: nextArchived,
     tags: updates.tags ? normalizeTags(updates.tags) : current.tags,
-    noteText: typeof updates.noteText === "string" ? updates.noteText.trim() : current.noteText,
+    noteText: typeof updates.noteText === "string" ? normalizeAnnotationNote(updates.noteText) : current.noteText,
     updatedAt: nowIso()
   };
+
+  const isUnchanged =
+    next.favorite === current.favorite &&
+    next.archived === current.archived &&
+    next.noteText === current.noteText &&
+    annotationTagsEqual(next.tags, current.tags);
+
+  if (isUnchanged) {
+    return current;
+  }
 
   db.prepare(`
     INSERT INTO session_annotations (

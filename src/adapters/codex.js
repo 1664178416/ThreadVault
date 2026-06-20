@@ -2,12 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { CODEX_SESSIONS_DIR } from "../config.js";
+import { CODEX_ARCHIVED_SESSIONS_DIR, CODEX_SESSIONS_DIR } from "../config.js";
 import { listFilesRecursive, parseErrorSummary, readJsonLines, sortByModifiedDesc } from "../utils/fs.js";
-import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashText, snippet } from "../utils/text.js";
+import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashSessionMessages, hashText, safeErrorMessage, snippet } from "../utils/text.js";
 
 function detectCodexSource() {
-  return fs.existsSync(CODEX_SESSIONS_DIR);
+  return fs.existsSync(CODEX_SESSIONS_DIR) || fs.existsSync(CODEX_ARCHIVED_SESSIONS_DIR);
 }
 
 function normalizeRole(role) {
@@ -307,7 +307,7 @@ function deriveWorkspacePath(records, sessionMeta) {
   return pool[0]?.workspacePath || null;
 }
 
-function normalizeSession(records, filePath) {
+function normalizeSession(records, filePath, options = {}) {
   const sessionMeta = records.find((record) => record.type === "session_meta")?.payload || {};
   const sourceSessionId = sessionMeta.id || path.basename(filePath, path.extname(filePath));
   const sessionId = `codex:${sourceSessionId}`;
@@ -341,9 +341,7 @@ function normalizeSession(records, filePath) {
     workspacePath || "",
     title,
     createdAt || "",
-    messages.length,
-    snippet(messages[0]?.content || "", 80),
-    snippet(messages[messages.length - 1]?.content || "", 80)
+    hashSessionMessages(messages)
   ].join("|"));
 
   return {
@@ -367,10 +365,48 @@ function normalizeSession(records, filePath) {
       source: sessionMeta.source || null,
       cliVersion: sessionMeta.cli_version || null,
       modelProvider: sessionMeta.model_provider || null,
+      sourceArchived: Boolean(options.sourceArchived),
       parseErrors: parseErrorSummary(records.parseErrors)
     },
     messages
   };
+}
+
+function sourceSessionIdFromFilePath(filePath) {
+  const fileName = path.basename(filePath, path.extname(filePath));
+  return fileName.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)?.[0] || fileName;
+}
+
+function codexSessionFileEntries() {
+  const entries = [];
+  const seen = new Set();
+  const roots = [
+    {
+      rootPath: CODEX_SESSIONS_DIR,
+      sourceArchived: false
+    },
+    {
+      rootPath: CODEX_ARCHIVED_SESSIONS_DIR,
+      sourceArchived: true
+    }
+  ];
+
+  for (const root of roots) {
+    for (const filePath of listFilesRecursive(root.rootPath).filter((candidatePath) => candidatePath.endsWith(".jsonl"))) {
+      const sessionId = sourceSessionIdFromFilePath(filePath);
+      if (seen.has(sessionId)) {
+        continue;
+      }
+
+      seen.add(sessionId);
+      entries.push({
+        filePath,
+        sourceArchived: root.sourceArchived
+      });
+    }
+  }
+
+  return entries;
 }
 
 export function scanCodexSessions() {
@@ -378,19 +414,22 @@ export function scanCodexSessions() {
     return [];
   }
 
-  const files = listFilesRecursive(CODEX_SESSIONS_DIR)
-    .filter((filePath) => filePath.endsWith(".jsonl"));
-  const sortedFiles = sortByModifiedDesc(files);
+  const entries = codexSessionFileEntries();
+  const entryByPath = new Map(entries.map((entry) => [entry.filePath, entry]));
+  const sortedEntries = sortByModifiedDesc(entries.map((entry) => entry.filePath))
+    .map((filePath) => entryByPath.get(filePath))
+    .filter(Boolean);
 
   const sessions = [];
-  for (const filePath of sortedFiles) {
+  for (const { filePath, sourceArchived } of sortedEntries) {
     try {
       const records = readJsonLines(filePath);
-      const normalized = normalizeSession(records, filePath);
+      const normalized = normalizeSession(records, filePath, { sourceArchived });
       if (normalized) {
         sessions.push(normalized);
       }
     } catch (error) {
+      const parseError = safeErrorMessage(error, "Session file could not be parsed.");
       sessions.push({
         id: `codex:error:${path.basename(filePath)}`,
         sourceId: "codex",
@@ -405,10 +444,11 @@ export function scanCodexSessions() {
         fingerprint: hashText(`codex:error|${filePath}`),
         sourcePath: filePath,
         status: "parse_error",
-        summary: String(error.message || error),
+        summary: parseError,
         parseConfidence: 0,
         metadata: {
-          error: String(error.message || error)
+          error: parseError,
+          sourceArchived
         },
         messages: []
       });

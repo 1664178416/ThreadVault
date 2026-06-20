@@ -63,7 +63,7 @@ ThreadVault currently reads:
 | Source | Default location |
 | --- | --- |
 | GitHub Copilot Chat | `%APPDATA%\Code\User\globalStorage\emptyWindowChatSessions` |
-| Codex | `%USERPROFILE%\.codex\sessions` |
+| Codex | `%USERPROFILE%\.codex\sessions` and `%USERPROFILE%\.codex\archived_sessions` |
 | Claude Code | `%USERPROFILE%\.claude\projects` |
 
 Claude subagent logs are skipped for now so the archive stays focused on main user-visible sessions.
@@ -94,6 +94,8 @@ The transcript output actions have different jobs. They do not change whether a 
 
 Use the `Save note` action on a session when you want to keep a high-value conversation as a durable Markdown note.
 
+Markdown exports and memory notes include the ThreadVault session id plus per-message turn numbers and message ids, so useful decisions or snippets can be traced back to a specific local conversation turn.
+
 By default, memory files are written to:
 
 ```text
@@ -111,6 +113,8 @@ On Windows PowerShell:
 ```powershell
 $env:THREADVAULT_MEMORY_DIR="D:\Notes\ThreadVault"; npm start
 ```
+
+Custom `THREADVAULT_DATA_DIR` and `THREADVAULT_MEMORY_DIR` values may be absolute paths, paths relative to the app root, or `~` paths under your home directory.
 
 ## VS Code Extension
 
@@ -200,6 +204,10 @@ These files may contain private prompts, code, paths, notes, and transcripts. Th
 The local HTTP API is intended for ThreadVault itself, VS Code, and browser pages opened from `localhost`, `127.0.0.1`, or `::1`. Write requests are restricted to these local origins plus the explicitly configured bind host. Do not expose the port to a public network.
 
 By default the server binds to `127.0.0.1`. Set `THREADVAULT_HOST` only if you understand the privacy implications. If you bind to `0.0.0.0`, keep browser access on `127.0.0.1` unless you intentionally want other devices on your network to reach the service.
+
+ThreadVault treats error text as potentially sensitive. Server, browser, and VS Code extension error paths redact local paths, network share paths, email addresses, and common token formats before showing errors in the UI or returning API error payloads. Open-source and open-workspace actions also validate that saved targets still exist and have the expected shape before launching VS Code.
+
+Markdown export and memory-save filenames are sanitized, shortened, and bounded. Exported Markdown can still contain private transcript content by design, so review files before sharing them outside your machine.
 
 Before pushing to GitHub, double-check:
 

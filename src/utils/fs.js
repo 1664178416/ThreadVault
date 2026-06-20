@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { safeErrorMessage } from "./text.js";
+
 const MAX_PARSE_ERROR_SAMPLES = 20;
 const EMPTY_PARSE_ERRORS = {
   total: 0,
@@ -24,7 +26,10 @@ export function parseErrorSummary(value) {
   ) {
     return {
       total: value.total,
-      samples: value.samples
+      samples: value.samples.slice(0, MAX_PARSE_ERROR_SAMPLES).map((sample) => ({
+        ...sample,
+        error: safeErrorMessage(sample?.error, "Parse error.")
+      }))
     };
   }
 
@@ -111,7 +116,7 @@ export function readJsonLines(filePath) {
         if (errorSamples.length < MAX_PARSE_ERROR_SAMPLES) {
           errorSamples.push({
             line: index + 1,
-            error: String(error.message || error)
+            error: safeErrorMessage(error, "JSON line could not be parsed.")
           });
         }
         errorTotal += 1;

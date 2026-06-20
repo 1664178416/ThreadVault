@@ -549,7 +549,7 @@ function runStateAndExportRegression() {
           id: "verify-message-1",
           ordinal: 0,
           role: "user",
-          content: "Please keep this local.",
+          content: "Please keep this local. Fallback-only marker ###",
           timestamp: "2026-06-10T01:00:00.000Z",
           model: "test-model <unsafe>",
           referencedFiles: ["C:/workspace/<demo>/[app].js"],
@@ -560,6 +560,23 @@ function runStateAndExportRegression() {
       const stats = upsertImportedSessions([session]);
       if (stats.importedSessions !== 1) {
         throw new Error(\`expected one imported session, got \${stats.importedSessions}\`);
+      }
+
+      const failedStats = upsertImportedSessions([{
+        ...session,
+        id: "verify-failed-session",
+        fingerprint: "verify-fingerprint",
+        sourcePath: "C:/Users/wyh/.codex/private-session.jsonl",
+        messages: [{
+          ...session.messages[0],
+          id: "verify-failed-message"
+        }]
+      }]);
+      if (failedStats.failedSessions !== 1 || failedStats.errors[0]?.sourcePath !== "[LOCAL_PATH]") {
+        throw new Error(\`failed import samples should redact source paths: \${JSON.stringify(failedStats)}\`);
+      }
+      if (JSON.stringify(failedStats).includes("C:/Users/wyh")) {
+        throw new Error(\`failed import samples leaked a local path: \${JSON.stringify(failedStats)}\`);
       }
 
       const favorited = updateSessionAnnotation(session.id, { favorite: true });
@@ -592,16 +609,83 @@ function runStateAndExportRegression() {
       if (JSON.stringify(tagged.tags) !== JSON.stringify(["Bug", "UI", "Memory", "<script>"])) {
         throw new Error(\`tags should be case-insensitive deduplicated while keeping first display form: \${JSON.stringify(tagged.tags)}\`);
       }
+      const unchangedTagged = updateSessionAnnotation(session.id, { tags: ["Bug", "UI", "Memory", "<script>"], noteText: "" });
+      if (unchangedTagged.updatedAt !== tagged.updatedAt) {
+        throw new Error(\`unchanged annotation saves should not rewrite updatedAt: before=\${tagged.updatedAt} after=\${unchangedTagged.updatedAt}\`);
+      }
+      const longTag = "Long tag with   spaces ".repeat(8);
+      const longNote = "x".repeat(20010);
+      const boundedAnnotation = updateSessionAnnotation(session.id, {
+        tags: [longTag, "Short"],
+        noteText: \`  \${longNote}  \`
+      });
+      if (boundedAnnotation.tags[0].length !== 64 || boundedAnnotation.tags[0].includes("   ")) {
+        throw new Error(\`tags should collapse whitespace and cap individual length: \${JSON.stringify(boundedAnnotation.tags)}\`);
+      }
+      if (boundedAnnotation.noteText.length !== 20000) {
+        throw new Error(\`notes should be capped at 20000 characters, got \${boundedAnnotation.noteText.length}\`);
+      }
+      updateSessionAnnotation(session.id, { tags: ["Bug", "UI", "Memory", "<script>"], noteText: "" });
 
       const favorites = listSessions({ favoritesOnly: true });
       const hiddenList = listSessions({ archivedOnly: true });
       if (favorites.length !== 1 || hiddenList.length !== 0) {
         throw new Error(\`unexpected list filters: favorites=\${favorites.length} hidden=\${hiddenList.length}\`);
       }
+      const invalidSourceFilter = listSessions({ sourceId: "codex" + "x".repeat(200) });
+      if (invalidSourceFilter.length !== 0) {
+        throw new Error(\`invalid direct source filters should return no sessions instead of all sessions: \${JSON.stringify(invalidSourceFilter)}\`);
+      }
 
       const strangeSearch = listSessions({ query: '" ^ * NEAR() ###', limit: 99999 });
       if (!Array.isArray(strangeSearch) || strangeSearch.length > 500) {
         throw new Error(\`search fallback or limit normalization failed: \${strangeSearch.length}\`);
+      }
+      const prefixSearch = listSessions({ query: "Regre" });
+      if (!prefixSearch.some((result) => result.id === session.id)) {
+        throw new Error(\`prefix FTS search should match Regression summary: \${JSON.stringify(prefixSearch)}\`);
+      }
+      const messagePrefixSearch = listSessions({ query: "loc" });
+      if (!messagePrefixSearch.some((result) => result.id === session.id)) {
+        throw new Error(\`prefix FTS search should match message text: \${JSON.stringify(messagePrefixSearch)}\`);
+      }
+      const referencedFileSearch = listSessions({ query: "[app].js" });
+      if (!referencedFileSearch.some((result) => result.id === session.id)) {
+        throw new Error(\`search should match referenced file names with punctuation: \${JSON.stringify(referencedFileSearch)}\`);
+      }
+      const tagPrefixSearch = listSessions({ query: "Mem" });
+      if (!tagPrefixSearch.some((result) => result.id === session.id)) {
+        throw new Error(\`prefix FTS search should match annotation tags: \${JSON.stringify(tagPrefixSearch)}\`);
+      }
+      const olderFallbackTitleSession = {
+        ...session,
+        id: "verify-fallback-title-session",
+        sourceSessionId: "fallback-title",
+        title: "### Important fallback title",
+        summary: "Older title match should still rank above a newer message-only match.",
+        updatedAt: "2026-06-01T02:00:00.000Z",
+        fingerprint: "verify-fallback-title-fingerprint",
+        messages: [{
+          ...session.messages[0],
+          id: "verify-fallback-title-message",
+          content: "This message intentionally avoids the punctuation marker."
+        }]
+      };
+      const fallbackTitleStats = upsertImportedSessions([olderFallbackTitleSession]);
+      if (fallbackTitleStats.importedSessions !== 1) {
+        throw new Error(\`expected one fallback title session, got \${fallbackTitleStats.importedSessions}\`);
+      }
+      const punctuationFallbackSearch = listSessions({ query: "###" });
+      const punctuationFallbackResult = punctuationFallbackSearch.find((result) => result.id === session.id);
+      if (!punctuationFallbackResult || !punctuationFallbackResult.searchSnippet?.includes("<mark>###</mark>")) {
+        throw new Error(\`punctuation fallback search should return a highlighted snippet: \${JSON.stringify(punctuationFallbackSearch)}\`);
+      }
+      if (punctuationFallbackSearch[0]?.id !== olderFallbackTitleSession.id) {
+        throw new Error(\`fallback ranking should prefer title hits over newer message-only hits: \${JSON.stringify(punctuationFallbackSearch)}\`);
+      }
+      const wildcardLikeSearch = listSessions({ query: "%" });
+      if (wildcardLikeSearch.some((result) => result.id === session.id)) {
+        throw new Error(\`LIKE wildcard characters should be treated as literal search text: \${JSON.stringify(wildcardLikeSearch)}\`);
       }
 
       const exportResult = exportSessionToMarkdown(session.id);
@@ -619,6 +703,71 @@ function runStateAndExportRegression() {
         throw new Error(\`Windows reserved memory folder was not sanitized: \${memoryResult.path}\`);
       }
 
+      const longSession = {
+        ...session,
+        id: "verify-long-filename-session",
+        sourceId: "codex-" + "source ".repeat(30),
+        sourceLabel: "Codex long filename source",
+        sourceSessionId: "thread-" + "identifier ".repeat(40),
+        title: "Long export filename " + "project decision memory ".repeat(40),
+        workspaceName: "workspace " + "name ".repeat(30),
+        fingerprint: "verify-long-filename-fingerprint",
+        messages: [{
+          ...session.messages[0],
+          id: "verify-long-filename-message",
+          content: "A long title and source id should still produce a compact Markdown filename."
+        }]
+      };
+      const longStats = upsertImportedSessions([longSession]);
+      if (longStats.importedSessions !== 1) {
+        throw new Error(\`expected one long filename session, got \${longStats.importedSessions}\`);
+      }
+      const longExport = exportSessionToMarkdown(longSession.id);
+      const duplicateLongExport = exportSessionToMarkdown(longSession.id);
+      const longMemory = saveSessionToMemory(longSession.id);
+      for (const [label, result] of [["long export", longExport], ["duplicate long export", duplicateLongExport], ["long memory", longMemory]]) {
+        if (!result.ok || !fs.existsSync(result.path)) {
+          throw new Error(\`\${label} failed: \${JSON.stringify(result)}\`);
+        }
+        const fileName = path.basename(result.path);
+        const baseName = path.basename(fileName, ".md");
+        if (baseName.length > 120) {
+          throw new Error(\`\${label} basename should stay compact, got \${baseName.length}: \${fileName}\`);
+        }
+      }
+      if (!/-[a-f0-9]{10}\\.md$/.test(path.basename(longExport.path))) {
+        throw new Error(\`long export should include a stable hash suffix: \${longExport.path}\`);
+      }
+      if (duplicateLongExport.path === longExport.path) {
+        throw new Error("duplicate long export should choose a unique path");
+      }
+
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = (candidatePath) => {
+        const text = String(candidatePath || "");
+        const exportDir = path.join(process.env.THREADVAULT_DATA_DIR, "exports");
+        if (text.startsWith(exportDir) && text.endsWith(".md")) {
+          return true;
+        }
+        return originalExistsSync(candidatePath);
+      };
+
+      try {
+        let failedSafely = false;
+        try {
+          exportSessionToMarkdown(longSession.id);
+        } catch (error) {
+          const message = String(error?.message || error);
+          failedSafely = message.includes("Unable to create a unique Markdown file path") && !message.includes(process.env.THREADVAULT_DATA_DIR);
+        }
+
+        if (!failedSafely) {
+          throw new Error("exhausted export file names should fail with a bounded redacted error");
+        }
+      } finally {
+        fs.existsSync = originalExistsSync;
+      }
+
       const exportMarkdown = fs.readFileSync(exportResult.path, "utf8");
       const memoryMarkdown = fs.readFileSync(memoryResult.path, "utf8");
       if (!exportMarkdown.includes("- ThreadVault action: export")) {
@@ -626,6 +775,16 @@ function runStateAndExportRegression() {
       }
       if (!memoryMarkdown.includes("- ThreadVault action: memory")) {
         throw new Error("memory markdown should record the ThreadVault action");
+      }
+      for (const anchor of [
+        "- ThreadVault session id: verify-session",
+        "### 1. User",
+        "- Turn: 1",
+        "- Message id: verify-message-1"
+      ]) {
+        if (!exportMarkdown.includes(anchor) || !memoryMarkdown.includes(anchor)) {
+          throw new Error("markdown should include stable trace anchors: " + anchor);
+        }
       }
       for (const unsafe of ["<script>", "<b>unsafe</b>", "C:/workspace/<demo>"]) {
         if (exportMarkdown.includes(unsafe) || memoryMarkdown.includes(unsafe)) {
@@ -814,7 +973,11 @@ function runServerHttpRegression() {
             req.destroy(new Error("HTTP regression request timed out"));
           });
           req.on("error", (error) => settle(reject, error));
-          if (options.body) {
+          if (options.bodyChunks) {
+            for (const bodyChunk of options.bodyChunks) {
+              req.write(bodyChunk);
+            }
+          } else if (options.body) {
             req.write(options.body);
           }
           req.end();
@@ -876,6 +1039,10 @@ function runServerHttpRegression() {
         if (badSessionEncoding.status !== 400 || !badSessionEncoding.body.includes("Invalid session id encoding")) {
           throw new Error("bad session id encoding should return 400, got " + badSessionEncoding.status + " " + badSessionEncoding.body);
         }
+        const blankSessionId = await request("/api/sessions/%20%20");
+        if (blankSessionId.status !== 400 || !blankSessionId.body.includes("Invalid session id encoding")) {
+          throw new Error("blank session id should return 400, got " + blankSessionId.status + " " + blankSessionId.body);
+        }
 
         const health = await request("/api/health");
         if (health.status !== 200) {
@@ -914,6 +1081,88 @@ function runServerHttpRegression() {
           throw new Error("favoritesOnly should return only non-hidden favorites, got " + favoritesOnly.body);
         }
 
+        const trimmedSourceFilter = await request("/api/sessions?sourceId=%20codex%20");
+        if (trimmedSourceFilter.status !== 200) {
+          throw new Error("trimmed sourceId should return 200, got " + trimmedSourceFilter.status);
+        }
+        const trimmedSourcePayload = JSON.parse(trimmedSourceFilter.body);
+        if (trimmedSourcePayload.sessions.length !== 1 || trimmedSourcePayload.sessions[0].id !== regularSession.id) {
+          throw new Error("trimmed sourceId should filter visible sessions by source, got " + trimmedSourceFilter.body);
+        }
+
+        const badSourceControl = await request("/api/sessions?sourceId=codex%01");
+        if (badSourceControl.status !== 400 || !badSourceControl.body.includes("Invalid source id")) {
+          throw new Error("control-character sourceId should return 400, got " + badSourceControl.status + " " + badSourceControl.body);
+        }
+
+        const badSourceLength = await request("/api/sessions?sourceId=" + "x".repeat(129));
+        if (badSourceLength.status !== 400 || !badSourceLength.body.includes("Invalid source id")) {
+          throw new Error("too-long sourceId should return 400, got " + badSourceLength.status + " " + badSourceLength.body);
+        }
+
+        const missingSource = await request("/api/open", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ sessionId: regularSession.id, target: "source" })
+        });
+        if (missingSource.status !== 404) {
+          throw new Error("missing source open should return 404, got " + missingSource.status);
+        }
+        const missingSourcePayload = JSON.parse(missingSource.body);
+        if (!missingSourcePayload.error.includes("[LOCAL_PATH]") || missingSourcePayload.error.includes("C:/history")) {
+          throw new Error("missing source error should redact local paths, got " + missingSource.body);
+        }
+        if (missingSourcePayload.path !== "[LOCAL_PATH]") {
+          throw new Error("missing source payload path should be redacted, got " + missingSource.body);
+        }
+
+        const trimmedExport = await request("/api/export", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ sessionId: "  " + regularSession.id + "  " })
+        });
+        if (trimmedExport.status !== 200) {
+          throw new Error("POST session ids should be normalized before lookup, got " + trimmedExport.status + " " + trimmedExport.body);
+        }
+
+        const tooLongSessionId = await request("/api/session-meta", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ sessionId: "x".repeat(513), favorite: true })
+        });
+        if (tooLongSessionId.status !== 400 || !tooLongSessionId.body.includes("Session id is required")) {
+          throw new Error("too-long session id should return 400, got " + tooLongSessionId.status + " " + tooLongSessionId.body);
+        }
+
+        const splitUtf8Body = Buffer.from(JSON.stringify({
+          sessionId: regularSession.id,
+          noteText: "跨 chunk 中文笔记"
+        }), "utf8");
+        const splitIndex = splitUtf8Body.indexOf(Buffer.from("中", "utf8")) + 1;
+        const splitUtf8Annotation = await request("/api/session-meta", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          bodyChunks: [
+            splitUtf8Body.subarray(0, splitIndex),
+            splitUtf8Body.subarray(splitIndex)
+          ]
+        });
+        if (splitUtf8Annotation.status !== 200) {
+          throw new Error("split UTF-8 JSON body should parse, got " + splitUtf8Annotation.status + " " + splitUtf8Annotation.body);
+        }
+        const splitUtf8Payload = JSON.parse(splitUtf8Annotation.body);
+        if (splitUtf8Payload.annotation?.noteText !== "跨 chunk 中文笔记") {
+          throw new Error("split UTF-8 JSON body should preserve note text, got " + splitUtf8Annotation.body);
+        }
+
         const forbidden = await request("/api/scan", {
           method: "POST",
           headers: {
@@ -924,6 +1173,28 @@ function runServerHttpRegression() {
         });
         if (forbidden.status !== 403 || !forbidden.body.includes("Cross-origin write")) {
           throw new Error("cross-origin write should return 403, got " + forbidden.status + " " + forbidden.body);
+        }
+
+        const arrayBody = await request("/api/session-meta", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: "[]"
+        });
+        if (arrayBody.status !== 400 || !arrayBody.body.includes("JSON object")) {
+          throw new Error("array request body should return 400, got " + arrayBody.status + " " + arrayBody.body);
+        }
+
+        const nullBody = await request("/api/session-meta", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: "null"
+        });
+        if (nullBody.status !== 400 || !nullBody.body.includes("JSON object")) {
+          throw new Error("null request body should return 400, got " + nullBody.status + " " + nullBody.body);
         }
 
         const oversized = await request("/api/session-meta", {
@@ -955,10 +1226,444 @@ function runServerHttpRegression() {
   }
 }
 
+function runParserErrorRedactionRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-parser-"));
+
+  try {
+    runModuleInput("parser error redaction regression failed", `
+      import fs from "node:fs";
+      import path from "node:path";
+      import { parseErrorSummary, readJsonLines } from "./src/utils/fs.js";
+      import { applyJsonLineOperations } from "./src/utils/jsonPatch.js";
+
+      const badLine = "C:/Users/wyh/private project/session file.jsonl token=ghp_abcdefghijklmnopqrs email=person@example.com";
+      const unixPathError = "/Users/wyh/private project/session file.jsonl token=ghp_abcdefghijklmnopqrs person@example.com";
+      const uncPathError = String.raw\`\\\\fileserver\\team share\\session file.jsonl token=ghp_abcdefghijklmnopqrs person@example.com\`;
+      const jsonlPath = path.join(${JSON.stringify(tempRoot)}, "bad.jsonl");
+      fs.writeFileSync(jsonlPath, badLine, "utf8");
+
+      const records = readJsonLines(jsonlPath);
+      const jsonlErrors = JSON.stringify(records.parseErrors);
+      const patchState = applyJsonLineOperations(['{"kind":0,"v":{}}', badLine]) || {};
+      const patchErrors = JSON.stringify(patchState.parseErrors || {});
+      const summary = parseErrorSummary({
+        total: 2,
+        samples: [
+          { line: 1, error: "Could not open C:/Users/wyh/private project/session file.jsonl token=ghp_abcdefghijklmnopqrs person@example.com" },
+          { line: 2, error: "Could not open " + unixPathError }
+        ]
+      });
+      const summaryErrors = JSON.stringify(summary);
+
+      const unixSummary = JSON.stringify(parseErrorSummary({
+        total: 1,
+        samples: [{ line: 1, error: unixPathError }]
+      }));
+      const uncSummary = JSON.stringify(parseErrorSummary({
+        total: 1,
+        samples: [{ line: 1, error: uncPathError }]
+      }));
+
+      for (const payload of [jsonlErrors, patchErrors, summaryErrors, unixSummary, uncSummary]) {
+        if (payload.includes("C:/Users/wyh") || payload.includes("private project") || payload.includes("session file.jsonl") || payload.includes("person@example.com") || payload.includes("ghp_abcdefghijklmnopqrs")) {
+          throw new Error("parser error samples leaked sensitive text: " + payload);
+        }
+        if (payload.includes("/Users/wyh")) {
+          throw new Error("parser error samples leaked a Unix local path: " + payload);
+        }
+        if (payload.includes("\\\\\\\\fileserver") || payload.includes("team share")) {
+          throw new Error("parser error samples leaked a UNC local path: " + payload);
+        }
+      }
+
+      for (const payload of [jsonlErrors, patchErrors]) {
+        if (!payload.includes("[LOCAL_PATH]")) {
+          throw new Error("parser JSON errors should redact local paths: " + payload);
+        }
+      }
+
+      for (const marker of ["[LOCAL_PATH]", "[EMAIL]", "[SECRET]"]) {
+        if (!summaryErrors.includes(marker)) {
+          throw new Error("parseErrorSummary should include " + marker + ": " + summaryErrors);
+        }
+      }
+    `);
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-parser-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
+function runCodexArchivedSourceRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-codex-archived-"));
+
+  try {
+    const normalSessionId = "019ec001-0000-7000-8000-000000000001";
+    const archivedSessionId = "019ec001-0000-7000-8000-000000000002";
+    const normalDir = path.join(tempRoot, ".codex", "sessions", "2026", "06", "20");
+    const archivedDir = path.join(tempRoot, ".codex", "archived_sessions");
+    fs.mkdirSync(normalDir, { recursive: true });
+    fs.mkdirSync(archivedDir, { recursive: true });
+
+    function rolloutLines(id, cwd, message) {
+      return [
+        JSON.stringify({
+          timestamp: "2026-06-20T01:00:00.000Z",
+          type: "session_meta",
+          payload: {
+            id,
+            cwd,
+            timestamp: "2026-06-20T01:00:00.000Z",
+            model_provider: "openai"
+          }
+        }),
+        JSON.stringify({
+          timestamp: "2026-06-20T01:01:00.000Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{
+              type: "input_text",
+              text: message
+            }]
+          }
+        })
+      ].join("\n");
+    }
+
+    const duplicateArchivedPath = path.join(archivedDir, `rollout-2026-06-20T09-00-00-${normalSessionId}.jsonl`);
+    const normalPath = path.join(normalDir, `rollout-2026-06-20T09-00-00-${normalSessionId}.jsonl`);
+    const archivedOnlyPath = path.join(archivedDir, `rollout-2026-06-20T09-05-00-${archivedSessionId}.jsonl`);
+    fs.writeFileSync(duplicateArchivedPath, rolloutLines(normalSessionId, "C:/old/project", "archived duplicate should lose"), "utf8");
+    fs.writeFileSync(normalPath, rolloutLines(normalSessionId, "C:/workspace/normal", "normal session should win"), "utf8");
+    fs.writeFileSync(archivedOnlyPath, rolloutLines(archivedSessionId, "C:/workspace/archived", "archived source should still index"), "utf8");
+
+    runModuleInput("codex archived source regression failed", `
+      import { scanCodexSessions } from "./src/adapters/codex.js";
+
+      const sessions = scanCodexSessions();
+      const normal = sessions.find((session) => session.sourceSessionId === ${JSON.stringify(normalSessionId)});
+      const archived = sessions.find((session) => session.sourceSessionId === ${JSON.stringify(archivedSessionId)});
+
+      if (!normal || !archived || sessions.length !== 2) {
+        throw new Error("expected one normal and one archived Codex session, got " + JSON.stringify(sessions));
+      }
+      if (normal.metadata.sourceArchived || normal.sourcePath.includes("archived_sessions") || !normal.summary.includes("normal session should win")) {
+        throw new Error("normal Codex sessions should win duplicate source ids: " + JSON.stringify(normal));
+      }
+      if (!archived.metadata.sourceArchived || !archived.sourcePath.includes("archived_sessions") || !archived.summary.includes("archived source should still index")) {
+        throw new Error("archived Codex sessions should remain searchable: " + JSON.stringify(archived));
+      }
+    `, {
+      USERPROFILE: tempRoot,
+      HOME: tempRoot,
+      THREADVAULT_DATA_DIR: path.join(tempRoot, "data")
+    });
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-codex-archived-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
+function runSessionFingerprintRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-fingerprint-"));
+
+  try {
+    runModuleInput("session fingerprint regression failed", `
+      import { getSessionDetail, upsertImportedSessions } from "./src/db/repository.js";
+      import { hashSessionMessages } from "./src/utils/text.js";
+
+      function messages(middleContent, middleModel = "model-a") {
+        return [
+          {
+            id: "fingerprint-message-1",
+            ordinal: 0,
+            role: "user",
+            content: "same first message",
+            timestamp: "2026-06-10T01:00:00.000Z",
+            model: null,
+            referencedFiles: [],
+            metadata: {}
+          },
+          {
+            id: "fingerprint-message-2",
+            ordinal: 1,
+            role: "assistant",
+            content: middleContent,
+            timestamp: "2026-06-10T01:01:00.000Z",
+            model: middleModel,
+            referencedFiles: ["C:/workspace/demo/middle.js"],
+            metadata: {}
+          },
+          {
+            id: "fingerprint-message-3",
+            ordinal: 2,
+            role: "user",
+            content: "same last message",
+            timestamp: "2026-06-10T01:02:00.000Z",
+            model: null,
+            referencedFiles: [],
+            metadata: {}
+          }
+        ];
+      }
+
+      function sessionWith(middleContent, middleModel) {
+        const sessionMessages = messages(middleContent, middleModel);
+        return {
+          id: "fingerprint-session",
+          sourceId: "codex",
+          sourceLabel: "Codex",
+          sourceSessionId: "fingerprint-source",
+          title: "Stable title",
+          summary: "Stable summary",
+          workspacePath: "C:/workspace/demo",
+          workspaceName: "demo",
+          createdAt: "2026-06-10T01:00:00.000Z",
+          updatedAt: "2026-06-10T02:00:00.000Z",
+          status: "ready",
+          resumeType: "workspace_only",
+          fingerprint: hashSessionMessages(sessionMessages),
+          sourcePath: "C:/history/fingerprint.jsonl",
+          parseConfidence: 1,
+          metadata: {},
+          messages: sessionMessages
+        };
+      }
+
+      const initial = sessionWith("middle before", "model-a");
+      const changedMiddle = sessionWith("middle after", "model-a");
+      const changedModel = sessionWith("middle after", "model-b");
+      if (initial.fingerprint === changedMiddle.fingerprint || changedMiddle.fingerprint === changedModel.fingerprint) {
+        throw new Error("message fingerprints should change for middle content and model changes");
+      }
+
+      const firstStats = upsertImportedSessions([initial]);
+      const secondStats = upsertImportedSessions([changedMiddle]);
+      if (firstStats.importedSessions !== 1 || secondStats.updatedSessions !== 1 || secondStats.skippedSessions !== 0) {
+        throw new Error(\`middle-message changes should update existing sessions: first=\${JSON.stringify(firstStats)} second=\${JSON.stringify(secondStats)}\`);
+      }
+
+      const detail = getSessionDetail(initial.id);
+      if (detail.messages[1]?.content !== "middle after") {
+        throw new Error("updated session detail should include changed middle message");
+      }
+    `, {
+      THREADVAULT_DATA_DIR: tempRoot
+    });
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-fingerprint-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
+function runOpenActionRedactionRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-open-action-"));
+
+  try {
+    runModuleInput("open action redaction regression failed", `
+      import childProcess from "node:child_process";
+      import fs from "node:fs";
+      import path from "node:path";
+      import { EventEmitter } from "node:events";
+      import { upsertImportedSessions } from "./src/db/repository.js";
+      import { openSessionTargetInVsCode } from "./src/services/actions.js";
+
+      const sourcePath = path.join(${JSON.stringify(tempRoot)}, "source.jsonl");
+      const workspaceFilePath = path.join(${JSON.stringify(tempRoot)}, "workspace.txt");
+      fs.writeFileSync(sourcePath, "{}", "utf8");
+      fs.writeFileSync(workspaceFilePath, "not a workspace", "utf8");
+
+      const session = {
+        id: "open-redaction-session",
+        sourceId: "codex",
+        sourceLabel: "Codex",
+        sourceSessionId: "open-redaction",
+        title: "Open redaction",
+        summary: "Open redaction",
+        workspacePath: ${JSON.stringify(tempRoot)},
+        workspaceName: "open-redaction",
+        createdAt: "2026-06-10T01:00:00.000Z",
+        updatedAt: "2026-06-10T02:00:00.000Z",
+        status: "ready",
+        resumeType: "thread",
+        fingerprint: "open-redaction-fingerprint",
+        sourcePath,
+        parseConfidence: 1,
+        metadata: {},
+        messages: [{
+          id: "open-redaction-message",
+          ordinal: 0,
+          role: "user",
+          content: "open redaction",
+          timestamp: "2026-06-10T01:00:00.000Z",
+          model: null,
+          referencedFiles: [],
+          metadata: {}
+        }]
+      };
+
+      upsertImportedSessions([session]);
+      const badSourceShapeSession = {
+        ...session,
+        id: "open-source-directory-session",
+        sourceSessionId: "open-source-directory",
+        fingerprint: "open-source-directory-fingerprint",
+        sourcePath: ${JSON.stringify(tempRoot)},
+        messages: [{
+          ...session.messages[0],
+          id: "open-source-directory-message"
+        }]
+      };
+      const badWorkspaceShapeSession = {
+        ...session,
+        id: "open-workspace-file-session",
+        sourceSessionId: "open-workspace-file",
+        fingerprint: "open-workspace-file-fingerprint",
+        workspacePath: workspaceFilePath,
+        messages: [{
+          ...session.messages[0],
+          id: "open-workspace-file-message"
+        }]
+      };
+      upsertImportedSessions([badSourceShapeSession, badWorkspaceShapeSession]);
+
+      const badSourceShape = await openSessionTargetInVsCode(badSourceShapeSession.id, "source");
+      if (badSourceShape.ok || !badSourceShape.error.includes("[LOCAL_PATH]") || badSourceShape.path !== "[LOCAL_PATH]" || JSON.stringify(badSourceShape).includes(${JSON.stringify(tempRoot)})) {
+        throw new Error("directory source paths should be rejected and redacted: " + JSON.stringify(badSourceShape));
+      }
+
+      const badWorkspaceShape = await openSessionTargetInVsCode(badWorkspaceShapeSession.id, "workspace");
+      if (badWorkspaceShape.ok || !badWorkspaceShape.error.includes("[LOCAL_PATH]") || badWorkspaceShape.path !== "[LOCAL_PATH]" || JSON.stringify(badWorkspaceShape).includes(workspaceFilePath)) {
+        throw new Error("non-workspace file workspace paths should be rejected and redacted: " + JSON.stringify(badWorkspaceShape));
+      }
+
+      const originalStatSync = fs.statSync;
+      fs.statSync = (targetPath, ...args) => {
+        if (targetPath === sourcePath) {
+          throw new Error("stat failed for C:/Users/wyh/private project/source file.jsonl token=ghp_abcdefghijklmnopqrs person@example.com");
+        }
+        return originalStatSync.call(fs, targetPath, ...args);
+      };
+
+      try {
+        const missingAfterStatRace = await openSessionTargetInVsCode(session.id, "source");
+        const payload = JSON.stringify(missingAfterStatRace);
+        if (missingAfterStatRace.ok || missingAfterStatRace.path !== "[LOCAL_PATH]" || !missingAfterStatRace.error.includes("[LOCAL_PATH]")) {
+          throw new Error("stat race should be treated as a redacted missing path: " + payload);
+        }
+        if (payload.includes("C:/Users/wyh") || payload.includes("private project") || payload.includes("source file.jsonl") || payload.includes("person@example.com") || payload.includes("ghp_abcdefghijklmnopqrs")) {
+          throw new Error("stat race result leaked sensitive text: " + payload);
+        }
+      } finally {
+        fs.statSync = originalStatSync;
+      }
+
+      const originalSpawn = childProcess.spawn;
+      childProcess.spawn = () => {
+        const child = new EventEmitter();
+        child.unref = () => {};
+        queueMicrotask(() => {
+          child.emit("error", new Error("spawn failed at C:/Users/wyh/private project/source file.jsonl token=ghp_abcdefghijklmnopqrs person@example.com"));
+        });
+        return child;
+      };
+
+      try {
+        const result = await openSessionTargetInVsCode(session.id, "source");
+        const payload = JSON.stringify(result);
+        if (result.ok) {
+          throw new Error("open action should fail under mocked spawn");
+        }
+        if (payload.includes("C:/Users/wyh") || payload.includes("private project") || payload.includes("source file.jsonl") || payload.includes("person@example.com") || payload.includes("ghp_abcdefghijklmnopqrs")) {
+          throw new Error("open action error leaked sensitive text: " + payload);
+        }
+        for (const marker of ["[LOCAL_PATH]", "[EMAIL]", "[SECRET]"]) {
+          if (!payload.includes(marker)) {
+            throw new Error("open action error should include " + marker + ": " + payload);
+          }
+        }
+      } finally {
+        childProcess.spawn = originalSpawn;
+      }
+    `, {
+      THREADVAULT_DATA_DIR: tempRoot
+    });
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-open-action-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
+function runConfigPathRegression() {
+  runModuleInput("config path normalization regression failed", `
+    import os from "node:os";
+    import path from "node:path";
+
+    const config = await import("./src/config.js");
+    const expectedDataDir = path.resolve(process.cwd(), "relative-data");
+    const expectedMemoryDir = path.join(os.homedir(), "threadvault-memory-check");
+
+    if (config.DATA_DIR !== expectedDataDir) {
+      throw new Error("relative THREADVAULT_DATA_DIR should resolve against the app root: " + config.DATA_DIR);
+    }
+    if (config.DB_PATH !== path.join(expectedDataDir, "threadvault.sqlite")) {
+      throw new Error("DB_PATH should derive from normalized DATA_DIR: " + config.DB_PATH);
+    }
+    if (config.EXPORT_DIR !== path.join(expectedDataDir, "exports")) {
+      throw new Error("EXPORT_DIR should derive from normalized DATA_DIR: " + config.EXPORT_DIR);
+    }
+    if (config.MEMORY_DIR !== expectedMemoryDir) {
+      throw new Error("THREADVAULT_MEMORY_DIR should expand ~/ paths: " + config.MEMORY_DIR);
+    }
+  `, {
+    THREADVAULT_DATA_DIR: "relative-data",
+    THREADVAULT_MEMORY_DIR: "~/threadvault-memory-check",
+    THREADVAULT_RUNTIME_FINGERPRINT: "verify"
+  });
+
+  runModuleInput("default memory path normalization regression failed", `
+    import path from "node:path";
+
+    const config = await import("./src/config.js");
+    const expectedDataDir = path.resolve(process.cwd(), "relative-data");
+    const expectedMemoryDir = path.join(expectedDataDir, "memory");
+
+    if (config.DATA_DIR !== expectedDataDir) {
+      throw new Error("relative THREADVAULT_DATA_DIR should resolve against the app root: " + config.DATA_DIR);
+    }
+    if (config.MEMORY_DIR !== expectedMemoryDir) {
+      throw new Error("default MEMORY_DIR should derive from normalized DATA_DIR: " + config.MEMORY_DIR);
+    }
+  `, {
+    THREADVAULT_DATA_DIR: "relative-data",
+    THREADVAULT_MEMORY_DIR: "",
+    THREADVAULT_RUNTIME_FINGERPRINT: "verify"
+  });
+}
+
 assertGlobLikeSelfTest();
+runConfigPathRegression();
 runStateAndExportRegression();
 runServerCorsRegression();
 runServerHttpRegression();
+runParserErrorRedactionRegression();
+runCodexArchivedSourceRegression();
+runSessionFingerprintRegression();
+runOpenActionRedactionRegression();
 assertI18nIntegrity();
 
 for (const relativePath of sourceCheckFiles()) {
@@ -995,6 +1700,16 @@ if (extensionPackage) {
     if (!properties[key]) {
       fail(`extension/package.json is missing setting ${key}.`);
     }
+  }
+
+  const dataDirectoryDescription = properties["threadvault.dataDirectory"]?.description || "";
+  if (!dataDirectoryDescription.includes("Absolute paths and ~ paths are supported") || !dataDirectoryDescription.includes("relative paths resolve from the default storage parent")) {
+    fail("threadvault.dataDirectory description should explain absolute, ~, and relative path handling.");
+  }
+
+  const memoryDirectoryDescription = properties["threadvault.memoryDirectory"]?.description || "";
+  if (!memoryDirectoryDescription.includes("Absolute paths and ~ paths are supported") || !memoryDirectoryDescription.includes("relative paths resolve from the current data directory")) {
+    fail("threadvault.memoryDirectory description should explain absolute, ~, and relative path handling.");
   }
 
   if (extensionPackage.publisher === "local") {
@@ -1182,7 +1897,13 @@ assertDirectorySynced("src", "extension/app/src");
 
 assertFileContains("src/services/exporter.js", [
   "WINDOWS_RESERVED_NAMES",
-  "WINDOWS_RESERVED_NAMES.has(slug)",
+  "const MAX_MARKDOWN_BASENAME_LENGTH = 120",
+  "const SESSION_FILENAME_HASH_LENGTH = 10",
+  "const MAX_UNIQUE_MARKDOWN_ATTEMPTS = 1000",
+  "function trimSlug",
+  "function compactBaseName",
+  "function sessionFileNameHash",
+  "WINDOWS_RESERVED_NAMES.has(trimmed)",
   "function oneLine",
   "function markdownInline",
   ".replaceAll(\"&\", \"&amp;\")",
@@ -1192,13 +1913,20 @@ assertFileContains("src/services/exporter.js", [
   "function markdownListValue",
   "function buildMarkdown(session, action = \"export\")",
   "- ThreadVault action: ",
+  "- ThreadVault session id: ",
   "buildMarkdown(session, \"export\")",
   "buildMarkdown(session, \"memory\")",
+  "for (const [index, message] of session.messages.entries())",
+  "const turnNumber = index + 1",
+  "- Turn: ${turnNumber}",
+  "- Message id: ${markdownListValue(message.id)}",
   "lines.push(fence(annotation.noteText))",
   "function ensureInsideDirectory",
   "function uniqueMarkdownPath",
   "path.relative(root, target)",
   "fs.existsSync(candidate)",
+  "index <= MAX_UNIQUE_MARKDOWN_ATTEMPTS",
+  "Unable to create a unique Markdown file path after many attempts.",
   "directory: path.dirname"
 ]);
 
@@ -1212,6 +1940,22 @@ assertFileContains("scripts/prepare-extension.mjs", [
 assertFileContains("public/app.js", [
   "const DEFAULT_REQUEST_TIMEOUT_MS = 30000",
   "const SCAN_REQUEST_TIMEOUT_MS = 120000",
+  "const MAX_SESSION_ID_LENGTH = 512",
+  "const MAX_SEARCH_QUERY_LENGTH = 500",
+  "const MAX_TAGS = 20",
+  "const MAX_TAG_LENGTH = 64",
+  "const MAX_TAG_INPUT_LENGTH = 1500",
+  "const MAX_NOTE_TEXT_LENGTH = 20000",
+  "const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000",
+  "maxlength=\"${MAX_TAG_INPUT_LENGTH}\"",
+  "maxlength=\"${MAX_NOTE_TEXT_LENGTH}\"",
+  "invalidResponse",
+  "function safeDisplayError",
+  "function redactDisplayLocalPaths",
+  "function redactDisplaySensitiveText",
+  "api[_-]?key|email|password|secret|token",
+  "\\/Users|\\/home|\\/tmp|\\/var\\/folders",
+  "showToast(safeDisplayError(error), \"warning\")",
   "requestTimedOut",
   "const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...fetchOptions } = options",
   "const controller = new AbortController()",
@@ -1220,6 +1964,13 @@ assertFileContains("public/app.js", [
   "signal: controller.signal",
   "error?.name === \"AbortError\"",
   "text = await response.text()",
+  "function safeResponseErrorDetail",
+  "truncateDisplayText(String(value || \"\"), MAX_RESPONSE_ERROR_TEXT_LENGTH)",
+  "function parseJsonPayload",
+  "payload = JSON.parse(trimmed)",
+  "throw new Error(detail ? `${t(\"invalidResponse\")}: ${detail}` : t(\"invalidResponse\"))",
+  "Array.isArray(payload)",
+  "safeDisplayError(payload.error || `${t(\"requestFailed\")}: ${response.status}`)",
   "if (!completed)",
   "window.clearTimeout(timeoutId)",
   "timeoutMs: SCAN_REQUEST_TIMEOUT_MS",
@@ -1234,6 +1985,7 @@ assertFileContains("public/app.js", [
   "writeLocalStorage(SETTINGS.storageKey",
   "readLocalStorage(LAYOUT.storageKey)",
   "writeLocalStorage(LAYOUT.storageKey",
+  "let selectSessionSequence = 0",
   "let leaving = false",
   "let autoDismissId = 0",
   "if (leaving)",
@@ -1247,6 +1999,11 @@ assertFileContains("public/app.js", [
   "event.key === \"Home\"",
   "event.key === \"End\"",
   "function browserSessionUrl",
+  "function normalizeSessionId",
+  "function normalizeSearchQuery",
+  "sessionId.length > MAX_SESSION_ID_LENGTH",
+  "MAX_SEARCH_QUERY_LENGTH",
+  "const normalizedSessionId = normalizeSessionId(sessionId || \"\")",
   "new URL(window.location.pathname || \"/\", window.location.origin)",
   "function applyHostMode",
   "topbarRight: document.querySelector(\".topbar-right\")",
@@ -1261,8 +2018,13 @@ assertFileContains("public/app.js", [
   "textarea.remove();",
   "restoreFocus(previousFocus)",
   "function showActionError",
+  "const message = safeDisplayError(error)",
   "status.textContent = message",
   "function normalizeAnnotationState",
+  "function normalizeAnnotationTags",
+  "function normalizeAnnotationNote",
+  "function annotationDraftChanged",
+  "noChangesToSave",
   "function annotationStatus",
   "function statusViewModel",
   "function statusChipHtml",
@@ -1271,7 +2033,18 @@ assertFileContains("public/app.js", [
   "function stateButtonLabel",
   "function annotationPayloadForStatus",
   "function filterSessionsForCurrentStatusView",
+  "function renderNoSessionSelected",
   "state.sessions = filterSessionsForCurrentStatusView(payload.sessions || [])",
+  "state.query = normalizedQuery",
+  "params.set(\"q\", normalizedQuery)",
+  "const preserveUrlSelection = Boolean(urlSessionId && state.selectedSessionId === urlSessionId)",
+  "!preserveUrlSelection",
+  "const selectedSessionId = state.selectedSessionId",
+  "selectedSessionId !== urlSessionId",
+  "renderNoSessionSelected()",
+  "const sequence = ++selectSessionSequence",
+  "sequence !== selectSessionSequence",
+  "state.selectedSessionId !== normalizedSessionId",
   "params.set(\"archivedOnly\", \"1\")",
   "params.set(\"includeArchived\", \"1\")",
   "function focusStateButton",
@@ -1283,6 +2056,8 @@ assertFileContains("public/app.js", [
   "statusChipHtml(annotation, { skipDefault: true })",
   "statusChipHtml(annotation, { detail: true })",
   "data-source-filter=\"${escapeHtml(card.sourceId)}\" aria-pressed=\"${card.active ? \"true\" : \"false\"}\"",
+  "const nextSourceFilter = node.getAttribute(\"data-source-filter\") || \"\"",
+  "state.sourceFilter = state.sourceFilter === nextSourceFilter ? \"\" : nextSourceFilter",
   "role=\"button\" tabindex=\"0\" aria-current=",
   "const openSessionItem = (node) =>",
   "event.key === \"Enter\" || event.key === \" \"",
@@ -1317,6 +2092,8 @@ assertFileContains("public/app.js", [
   "#save-note-button",
   "button.disabled = true",
   "label.textContent = t(\"saving\")",
+  "if (!annotationDraftChanged(annotation, tags, noteText))",
+  "const message = t(\"noChangesToSave\")",
   "showActionError(t(\"sourceMissing\"), status)",
   "showActionError(t(\"workspaceMissing\"), status)",
   "showActionError(result.error || t(\"exportFailed\"), status)",
@@ -1371,6 +2148,8 @@ assertFileExcludes("public/app.js", [
   "role=\"radio\"",
   "aria-checked=",
   "stateRadioTabIndex",
+  "payload = { error: text }",
+  "throw new Error(payload.error || `${t(\"requestFailed\")}: ${response.status}`)",
   "status.textContent = `${t(\"exportedTo\")} ${result.path}`",
   "status.textContent = `${t(\"memorySaved\")} ${result.path}`"
 ]);
@@ -1379,6 +2158,7 @@ assertFileContains("public/index.html", [
   "href=\"/favicon.svg\"",
   "type=\"image/svg+xml\"",
   "aria-label=\"Search sessions\"",
+  "maxlength=\"500\"",
   "data-i18n-aria-label=\"searchSessions\"",
   "id=\"stats\" class=\"source-grid\" role=\"group\"",
   "data-i18n-aria-label=\"sources\"",
@@ -1394,10 +2174,25 @@ assertFileContains("public/index.html", [
 ]);
 
 assertFileContains("src/db/repository.js", [
+  "const MAX_TAGS = 20",
+  "const MAX_TAG_LENGTH = 64",
+  "const MAX_NOTE_TEXT_LENGTH = 20000",
+  "const MAX_SOURCE_ID_LENGTH = 128",
   "function normalizeQuery",
+  "function escapeLikeQuery",
   "function normalizeLimit",
+  "function normalizeSourceId",
+  "const normalizedSourceId = normalizeSourceId(sourceId)",
+  "if (normalizedSourceId === null)",
+  "function normalizeAnnotationNote",
+  "function annotationTagsEqual",
+  "const isUnchanged =",
+  "return current",
   "const seen = new Set()",
   "text.toLocaleLowerCase()",
+  "matchAll(/[\\p{L}\\p{N}_][\\p{L}\\p{N}_-]*/gu)",
+  "replaceAll(\"\\\"\", \"\\\"\\\"\")",
+  "\"*`).join(\" AND \")",
   "favorite: archived ? false : Boolean(row.favorite)",
   "const normalizedQuery = normalizeQuery(query)",
   "const normalizedLimit = normalizeLimit(limit)",
@@ -1408,6 +2203,15 @@ assertFileContains("src/db/repository.js", [
   "nextArchived = false",
   "failedSessions",
   "stats.errors",
+  "const likeQuery = escapeLikeQuery(normalizedQuery)",
+  "AS fallbackRank",
+  "ORDER BY fallbackRank DESC",
+  "const fallbackRankParams = Array(8).fill(likeQuery)",
+  "ESCAPE '\\\\'",
+  "COALESCE(a.tags_json, '[]') LIKE ?",
+  "FROM messages m",
+  "m.content LIKE ?",
+  "m.referenced_files_json LIKE ?",
   "db.exec(\"BEGIN TRANSACTION\")"
 ]);
 
@@ -1429,14 +2233,37 @@ assertFileContains("extension/extension.js", [
   "fingerprint: readBundleFingerprint(targetRoot) || bundledFingerprint",
   "THREADVAULT_RUNTIME_FINGERPRINT: runtime.fingerprint || \"\"",
   "const HEALTH_APP_NAME = \"ThreadVault\"",
+  "const MAX_EXTENSION_ERROR_LENGTH = 360",
+  "const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000",
+  "const MAX_SESSION_ID_LENGTH = 512",
+  "const VALID_OPEN_TARGETS = new Set([\"source\", \"workspace\"])",
   "function healthMatches",
   "function readServerHealth",
   "function errorMessage(error)",
+  "function safeExtensionMessage",
+  "function redactLocalPaths",
+  "function redactSensitiveText",
+  "function expandPath(value, basePath = process.cwd())",
+  "return path.resolve(basePath, text)",
+  "return expandPath(extensionConfig().get(key, \"\"), path.dirname(fallbackPath)) || fallbackPath",
+  "function safeResponseErrorDetail",
+  "function parseResponsePayload",
+  "safeExtensionMessage(capped, \"\")",
+  "payload = JSON.parse(text)",
+  "Array.isArray(payload)",
+  "ThreadVault returned unexpected JSON (${statusCode || 0}).",
+  "api[_-]?key|email|password|secret|token",
+  "\\/Users|\\/home|\\/tmp|\\/var\\/folders",
+  "[LOCAL_PATH]",
+  "[SECRET]",
+  "[EMAIL]",
   "function runCommandSafely(label, callback)",
   "const message = `${label} failed: ${errorMessage(error)}`",
   "vscode.window.showErrorMessage(message)",
   "function urlHost",
   "function dashboardBaseUrl",
+  "function normalizeSessionId",
+  "sessionId.length > MAX_SESSION_ID_LENGTH",
   "function rememberServerStderr",
   "could not start|server failed|EADDRINUSE|listen EADDRINUSE",
   "frame-src ${urlOrigin}",
@@ -1452,14 +2279,19 @@ assertFileContains("extension/extension.js", [
   "const timeoutMs = options.timeoutMs || 2500",
   "let settled = false",
   "const settle = (callback, value) =>",
+  "const chunks = []",
   "let receivedBytes = 0",
   "receivedBytes += chunk.length",
   "receivedBytes > MAX_RESPONSE_BYTES",
   "ThreadVault response body is too large.",
+  "chunks.push(Buffer.from(chunk))",
+  "Buffer.concat(chunks, receivedBytes).toString(\"utf8\")",
   "res.setTimeout(timeoutMs",
   "ThreadVault response timed out after ${timeoutMs}ms.",
   "res.on(\"error\", (error) => settle(reject, error))",
-  "ThreadVault returned invalid JSON (${res.statusCode || 0})",
+  "ThreadVault returned invalid JSON (${statusCode || 0})",
+  "const payload = parseResponsePayload(body, res.statusCode)",
+  "new Error(safeExtensionMessage(payload.error || `ThreadVault request failed with status ${res.statusCode}.`))",
   "res.statusCode < 200 || res.statusCode >= 300",
   "ThreadVault request failed with status ${res.statusCode}.",
   "req.setTimeout(timeoutMs",
@@ -1494,12 +2326,22 @@ assertFileContains("extension/extension.js", [
   "message.hostToken !== hostToken",
   "...payload,\n    source: \"threadvault-host\",\n    hostToken",
   "threadvault-open-browser",
-  "const sessionId = parsedUrl.searchParams.get(\"session\") || \"\"",
+  "function openErrorResult",
+  "function safeStat",
+  "VALID_OPEN_TARGETS.has(target)",
+  "const stat = targetPath ? safeStat(targetPath) : null",
+  "path: redactedPath(targetPath)",
+  "const sessionId = normalizeSessionId(parsedUrl.searchParams.get(\"session\") || \"\")",
   "baseUrl.searchParams.set(\"session\", sessionId)",
-  "error: error.message || String(error)"
+  "error: errorMessage(error)"
 ]);
 
 assertFileExcludes("extension/extension.js", [
+  "body += chunk.toString()",
+  "${body || error.message}",
+  "new Error(payload.error || `ThreadVault request failed with status ${res.statusCode}.`)",
+  "error: error.message || String(error)",
+  "fs.existsSync(targetPath)",
   "parsedUrl.searchParams.delete(\"embed\")",
   "parsedUrl.searchParams.delete(\"host\")",
   "parsedUrl.searchParams.delete(\"hostToken\")",
@@ -1507,6 +2349,9 @@ assertFileExcludes("extension/extension.js", [
 ]);
 
 assertFileContains("src/server.js", [
+  "import { safeErrorMessage }",
+  "function sendError",
+  "safeErrorMessage(error, fallback)",
   "export function corsHeaders",
   "export function requestHasAllowedWriteOrigin",
   "function baseHeaders",
@@ -1521,7 +2366,11 @@ assertFileContains("src/server.js", [
   "function allowedWriteOrigins",
   "const ALLOWED_WRITE_ORIGINS = allowedWriteOrigins()",
   "function urlHost",
-  "function hasSessionId",
+  "const MAX_SESSION_ID_LENGTH = 512",
+  "const MAX_SOURCE_ID_LENGTH = 128",
+  "function normalizeSessionId",
+  "function normalizeSourceId",
+  "function sessionIdFromPayload",
   "function decodePathComponent",
   "Invalid session id encoding.",
   "GET, HEAD, POST, OPTIONS",
@@ -1531,6 +2380,7 @@ assertFileContains("src/server.js", [
   "runtimeFingerprint: RUNTIME_FINGERPRINT",
   "function methodAllowedForStatic",
   "Method not allowed.",
+  "function isJsonObject",
   "function runInitialScanSoon",
   "function isMainModule",
   "export function createServer",
@@ -1548,13 +2398,50 @@ assertFileContains("src/server.js", [
   "node: process.versions.node",
   "host: APP_HOST",
   "port: APP_PORT",
-  "!hasSessionId(payload)",
+  "const chunks = []",
+  "chunks.push(Buffer.from(chunk))",
+  "Buffer.concat(chunks, receivedBytes).toString(\"utf8\")",
+  "Request body must be a JSON object.",
+  "const sessionId = sessionIdFromPayload(payload)",
+  "!sessionId",
+  "Invalid source id.",
   "Session id is required.",
   "Open target must be source or workspace.",
-  "openSessionTargetInVsCode(payload.sessionId, payload.target)",
+  "openSessionTargetInVsCode(sessionId, payload.target)",
   "ALLOWED_WRITE_ORIGINS.has(normalizeOrigin(origin))",
   "\"Access-Control-Allow-Origin\": origin || \"*\"",
   "Cross-origin write requests are not allowed."
+]);
+
+assertFileExcludes("src/server.js", [
+  "payload.sessionId,",
+  "chunk.toString()"
+]);
+
+assertFileContains("src/utils/text.js", [
+  "export function hashSessionMessages",
+  "export function safeErrorMessage",
+  "export function redactLocalPath",
+  "function redactLocalPaths",
+  "function redactSensitiveText",
+  "api[_-]?key|email|password|secret|token",
+  "\\/Users|\\/home|\\/tmp|\\/var\\/folders",
+  "[LOCAL_PATH]",
+  "[SECRET]",
+  "[EMAIL]"
+]);
+
+assertFileContains("src/services/indexer.js", [
+  "import { safeErrorMessage }",
+  "safeErrorMessage(source.error, \"Source scan failed.\")",
+  "sourceStats: sanitizeSourceStats(sourceStats)",
+  "function sanitizeSourceStats"
+]);
+
+assertFileContains("src/db/repository.js", [
+  "import { redactLocalPath, safeErrorMessage, snippet }",
+  "sourcePath: redactLocalPath(session?.sourcePath)",
+  "safeErrorMessage(error, \"Session import failed.\")"
 ]);
 
 assertFileContains("src/config.js", [
@@ -1622,7 +2509,21 @@ assertFileContains("SECURITY.md", [
   "The local server binds to `127.0.0.1` by default.",
   "Write requests are restricted to local origins plus the explicitly configured bind host.",
   "VS Code webview actions use a tokenized host bridge.",
+  "redact local paths, UNC/network share paths, email addresses, and common token/secret formats",
+  "unexpected HTML/text responses are treated as sanitized protocol errors",
+  "Source targets must be files, and workspace targets must be folders or `.code-workspace` files.",
+  "sanitized, compacted, and bounded",
   "Please treat any change that weakens these defaults as security-sensitive."
+]);
+
+assertFileContains("README.md", [
+  "ThreadVault does not upload transcripts, source paths, exports, memory notes, or the SQLite archive.",
+  "Markdown exports and memory notes include the ThreadVault session id plus per-message turn numbers and message ids",
+  "Custom `THREADVAULT_DATA_DIR` and `THREADVAULT_MEMORY_DIR` values may be absolute paths, paths relative to the app root, or `~` paths under your home directory.",
+  "The local HTTP API is intended for ThreadVault itself, VS Code, and browser pages opened from `localhost`, `127.0.0.1`, or `::1`.",
+  "redact local paths, network share paths, email addresses, and common token formats",
+  "validate that saved targets still exist and have the expected shape before launching VS Code",
+  "Markdown export and memory-save filenames are sanitized, shortened, and bounded."
 ]);
 
 assertFileContains("docs/technical-design.md", [
@@ -1636,7 +2537,12 @@ assertFileContains("docs/technical-design.md", [
   "running server signature also includes the runtime fingerprint",
   "health endpoint returns it too",
   "same-version VSIX installs and development source changes restart the local service",
-  "Real HTTP behavior"
+  "Real HTTP behavior",
+  "Server, browser, and extension error paths redact local paths",
+  "The browser API client accepts JSON object responses only",
+  "Open actions validate saved target shape before launching VS Code",
+  "Export and memory filenames are sanitized, compacted",
+  "frontend response parsing guardrails"
 ]);
 
 assertFileContains("docs/tasks-mvp.md", [
@@ -1697,6 +2603,9 @@ assertFileContains("extension/README.md", [
   "Output actions do not change that state",
   "`Export copy` creates a Markdown copy",
   "`Save note` writes a durable Markdown note",
+  "Directory settings accept absolute paths, `~` paths under your home directory, and relative paths.",
+  "Relative `threadvault.dataDirectory` values resolve from the default storage parent",
+  "relative `threadvault.memoryDirectory` values resolve from the current data directory",
   "The generated VSIX is written to the `extension` folder.",
   "`preview`",
   "`galleryBanner`",
@@ -1733,26 +2642,48 @@ assertFileContains(".github/workflows/ci.yml", [
 assertFileContains("src/config.js", [
   "function parsePort",
   "function normalizeHostSetting",
+  "function expandConfigPath",
+  "text === \"~\"",
+  "text.startsWith(\"~/\")",
+  "path.resolve(APP_ROOT, text)",
   "const maybeBareIpv6 = bracketless.split(\":\").length > 2",
   "APP_PORT = parsePort(process.env.THREADVAULT_PORT)",
-  "APP_HOST = normalizeHostSetting(process.env.THREADVAULT_HOST)"
+  "APP_HOST = normalizeHostSetting(process.env.THREADVAULT_HOST)",
+  "DATA_DIR = expandConfigPath(process.env.THREADVAULT_DATA_DIR",
+  "MEMORY_DIR = expandConfigPath(process.env.THREADVAULT_MEMORY_DIR",
+  "CODEX_ARCHIVED_SESSIONS_DIR"
 ]);
 
 assertFileContains("src/services/actions.js", [
   "import { getSessionDetail }",
+  "import { safeStat }",
+  "import { safeErrorMessage }",
   "const VALID_TARGETS = new Set([\"source\", \"workspace\"])",
   "function codeCommandError",
+  "function isWorkspaceFile",
+  "function targetShapeError",
+  "The saved workspace path is not a folder or .code-workspace file",
+  "The saved source path is a folder, not a transcript file",
   "error?.code === \"ENOENT\"",
+  "const details = safeErrorMessage(error, \"Unknown error\")",
   "Install the VS Code shell command",
   "return new Promise",
   "child.once(\"error\"",
   "child.once(\"spawn\"",
   "function pathForSessionTarget",
   "export async function openSessionTargetInVsCode",
+  "safeErrorMessage(`The saved ${label} path no longer exists: ${targetPath}`)",
+  "path: targetPath ? \"[LOCAL_PATH]\" : \"\"",
   "!VALID_TARGETS.has(target)",
   "Open target must be source or workspace.",
+  "const stat = targetPath ? safeStat(targetPath) : null",
   "const launchResult = await launchCode",
   "const targetPath = pathForSessionTarget(session, target)"
+]);
+
+assertFileExcludes("src/services/actions.js", [
+  "fs.existsSync(targetPath)",
+  "fs.statSync(targetPath)"
 ]);
 
 assertFileContains("src/services/indexer.js", [
@@ -1761,33 +2692,61 @@ assertFileContains("src/services/indexer.js", [
   "sourceErrors: sourceErrors.slice(0, 20)"
 ]);
 
+assertFileContains("src/adapters/index.js", [
+  "import { safeErrorMessage }",
+  "safeErrorMessage(error, \"Source scan failed.\")"
+]);
+
 assertFileContains("src/utils/fs.js", [
+  "import { safeErrorMessage }",
   "export function safeStat",
   "export function sortByModifiedDesc",
   "safeStat(filePath)?.isFile()",
   "try {",
   "MAX_PARSE_ERROR_SAMPLES",
   "export function parseErrorSummary",
+  "safeErrorMessage(sample?.error, \"Parse error.\")",
   "total: 0",
   "const records = []",
   "const errorSamples = []",
   "let errorTotal = 0",
+  "safeErrorMessage(error, \"JSON line could not be parsed.\")",
   "Object.defineProperty(records, \"parseErrors\"",
   "samples: errorSamples"
 ]);
 
 assertFileContains("src/utils/jsonPatch.js", [
+  "import { safeErrorMessage }",
   "MAX_PARSE_ERROR_SAMPLES",
   "const errorSamples = []",
   "let errorTotal = 0",
   "JSON.parse(line)",
+  "safeErrorMessage(error, \"JSON patch line could not be parsed.\")",
   "state, \"parseErrors\"",
   "samples: errorSamples"
 ]);
 
 for (const relativePath of ["src/adapters/copilot.js", "src/adapters/codex.js", "src/adapters/claude.js"]) {
-  assertFileContains(relativePath, ["parseErrorSummary", "parseErrors", "sortByModifiedDesc"]);
+  assertFileContains(relativePath, [
+    "hashSessionMessages",
+    "safeErrorMessage",
+    "const parseError = safeErrorMessage(error, \"Session file could not be parsed.\")",
+    "hashSessionMessages(messages)",
+    "summary: parseError",
+    "error: parseError",
+    "parseErrorSummary",
+    "parseErrors",
+    "sortByModifiedDesc"
+  ]);
 }
+
+assertFileContains("src/adapters/codex.js", [
+  "CODEX_ARCHIVED_SESSIONS_DIR",
+  "function codexSessionFileEntries",
+  "sourceArchived: true",
+  "metadata: {",
+  "sourceArchived: Boolean(options.sourceArchived)"
+]);
 
 const vscodeIgnore = fs.readFileSync(path.join(projectRoot, "extension", ".vscodeignore"), "utf8");
 for (const pattern of ["*.vsix", "*.log", "app/data/**", "app/**/exports/**", "app/**/memory/**", "app/**/*.sqlite", "app/**/*.sqlite-shm", "app/**/*.sqlite-wal"]) {

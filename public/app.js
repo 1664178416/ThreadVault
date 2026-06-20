@@ -12,6 +12,13 @@ const SETTINGS = {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const SCAN_REQUEST_TIMEOUT_MS = 120000;
+const MAX_SESSION_ID_LENGTH = 512;
+const MAX_SEARCH_QUERY_LENGTH = 500;
+const MAX_TAGS = 20;
+const MAX_TAG_LENGTH = 64;
+const MAX_TAG_INPUT_LENGTH = 1500;
+const MAX_NOTE_TEXT_LENGTH = 20000;
+const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000;
 
 const I18N = {
   en: {
@@ -67,6 +74,7 @@ const I18N = {
     noSessionSelected: "No session is selected.",
     noSessionsMatched: "Nothing matched the current view.",
     noSessions: "No sessions",
+    noChangesToSave: "No changes to save.",
     noTranscript: "No transcript messages were parsed for this session.",
     noWorkspace: "No workspace",
     note: "Note",
@@ -77,6 +85,7 @@ const I18N = {
     rescan: "Rescan",
     restoreTitle: "Return this session to the main list.",
     requestFailed: "Request failed",
+    invalidResponse: "ThreadVault returned an unexpected response",
     requestTimedOut: "Request timed out. Check that the local ThreadVault service is still running.",
     save: "Save",
     saved: "Saved",
@@ -181,6 +190,7 @@ const I18N = {
     noSessionSelected: "\u672a\u9009\u62e9\u4f1a\u8bdd\u3002",
     noSessionsMatched: "\u5f53\u524d\u89c6\u56fe\u6ca1\u6709\u5339\u914d\u7ed3\u679c\u3002",
     noSessions: "\u6ca1\u6709\u4f1a\u8bdd",
+    noChangesToSave: "\u6ca1\u6709\u9700\u8981\u4fdd\u5b58\u7684\u66f4\u6539\u3002",
     noTranscript: "\u8fd9\u4e2a\u4f1a\u8bdd\u6682\u672a\u89e3\u6790\u5230\u53ef\u5c55\u793a\u7684\u6d88\u606f\u3002",
     noWorkspace: "\u65e0\u5de5\u4f5c\u533a",
     note: "\u5907\u6ce8",
@@ -191,6 +201,7 @@ const I18N = {
     rescan: "\u91cd\u65b0\u626b\u63cf",
     restoreTitle: "\u5c06\u8fd9\u6b21\u4f1a\u8bdd\u653e\u56de\u4e3b\u5217\u8868\u3002",
     requestFailed: "\u8bf7\u6c42\u5931\u8d25",
+    invalidResponse: "ThreadVault \u8fd4\u56de\u4e86\u975e\u9884\u671f\u54cd\u5e94",
     requestTimedOut: "\u8bf7\u6c42\u8d85\u65f6\u3002\u8bf7\u786e\u8ba4\u672c\u5730 ThreadVault \u670d\u52a1\u4ecd\u5728\u8fd0\u884c\u3002",
     save: "\u4fdd\u5b58",
     saved: "\u5df2\u4fdd\u5b58",
@@ -303,6 +314,7 @@ const hostToken = urlParams.get("hostToken") || "";
 const HOST_TOKEN_PATTERN = /^[a-f0-9]{32}$/;
 const pendingHostRequests = new Map();
 let loadSequence = 0;
+let selectSessionSequence = 0;
 let searchTimer = null;
 
 const elements = {
@@ -602,6 +614,38 @@ function normalizeAnnotationState(annotation = {}) {
   };
 }
 
+function normalizeAnnotationTags(tags) {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  const normalized = [];
+  const seen = new Set();
+  for (const tag of tags) {
+    const text = String(tag || "").replace(/\s+/g, " ").trim().slice(0, MAX_TAG_LENGTH);
+    const key = text.toLocaleLowerCase();
+    if (!text || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push(text);
+    if (normalized.length >= MAX_TAGS) {
+      break;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeAnnotationNote(value) {
+  return String(value || "").trim().slice(0, MAX_NOTE_TEXT_LENGTH);
+}
+
+function annotationDraftChanged(annotation, tags, noteText) {
+  const current = normalizeAnnotationState(annotation);
+  return current.noteText !== noteText || JSON.stringify(current.tags) !== JSON.stringify(tags);
+}
+
 function annotationStatus(annotation = {}) {
   const normalized = normalizeAnnotationState(annotation);
   if (normalized.archived) {
@@ -800,7 +844,7 @@ function setSetting(key, value) {
   renderSessionList();
   if (key === "language" && state.selectedSessionId) {
     selectSession(state.selectedSessionId, false, false).catch((error) => {
-      showToast(String(error.message || error), "warning");
+      showToast(safeDisplayError(error), "warning");
     });
   }
 }
@@ -849,6 +893,46 @@ function basenameFromPath(value) {
   return parts.at(-1) || text;
 }
 
+function safeDisplayError(error, fallback = t("requestFailed")) {
+  const raw = error instanceof Error ? error.message : String(error || "");
+  const normalized = raw.replace(/\s+/g, " ").trim() || fallback;
+  return truncateDisplayText(redactDisplaySensitiveText(redactDisplayLocalPaths(normalized)), 360) || fallback;
+}
+
+function redactDisplayLocalPaths(value) {
+  return String(value || "")
+    .replace(/\b[A-Za-z]:[\\/][^"'<>|?*\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, "[LOCAL_PATH]")
+    .replace(/\b[A-Za-z]:[\\/](?:[^<>:"|?*\s]+[\\/])*[^<>:"|?*\s]*/g, "[LOCAL_PATH]")
+    .replace(/(?:^|\s)\\\\[^\\/"'<>|?*\r\n]+\\[^"'<>|?*\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    })
+    .replace(/(?:^|\s)(?:\/Users|\/home|\/tmp|\/var\/folders)\/[^"'<>|\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    })
+    .replace(/(?:^|\s)(?:\/Users|\/home|\/tmp|\/var\/folders)\/[^\s"'<>]+/g, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    });
+}
+
+function redactDisplaySensitiveText(value) {
+  return String(value || "")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
+    .replace(/\b(?:sk|pk|ghp|gho|github_pat|glpat|xox[baprs])-[-_A-Za-z0-9]{12,}\b/g, "[SECRET]")
+    .replace(/\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*["']?[-_A-Za-z0-9./+=]{8,}["']?/gi, "$1=[SECRET]");
+}
+
+function truncateDisplayText(value, maxLength) {
+  const text = String(value || "");
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
 function outputResultName(result) {
   return result?.fileName || basenameFromPath(result?.path) || t("unknown");
 }
@@ -885,14 +969,32 @@ function displayMessageContent(message) {
   return stripInternalContext(message?.content || "");
 }
 
+function normalizeSessionId(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const sessionId = value.trim();
+  if (!sessionId || sessionId.length > MAX_SESSION_ID_LENGTH || /[\u0000-\u001f\u007f]/u.test(sessionId)) {
+    return "";
+  }
+
+  return sessionId;
+}
+
+function normalizeSearchQuery(value) {
+  return String(value || "").trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
+}
+
 function sessionIdFromUrl() {
-  return new URLSearchParams(window.location.search).get("session") || "";
+  return normalizeSessionId(new URLSearchParams(window.location.search).get("session") || "");
 }
 
 function sessionUrl(sessionId = state.selectedSessionId) {
   const url = new URL(window.location.href);
-  if (sessionId) {
-    url.searchParams.set("session", sessionId);
+  const normalizedSessionId = normalizeSessionId(sessionId || "");
+  if (normalizedSessionId) {
+    url.searchParams.set("session", normalizedSessionId);
   } else {
     url.searchParams.delete("session");
   }
@@ -901,8 +1003,9 @@ function sessionUrl(sessionId = state.selectedSessionId) {
 
 function browserSessionUrl(sessionId = state.selectedSessionId) {
   const url = new URL(window.location.pathname || "/", window.location.origin);
-  if (sessionId) {
-    url.searchParams.set("session", sessionId);
+  const normalizedSessionId = normalizeSessionId(sessionId || "");
+  if (normalizedSessionId) {
+    url.searchParams.set("session", normalizedSessionId);
   }
   return url.toString();
 }
@@ -1267,6 +1370,38 @@ window.addEventListener("message", (event) => {
   pending.reject(new Error(payload.error || t("hostActionFailed")));
 });
 
+function safeResponseErrorDetail(value) {
+  const capped = truncateDisplayText(String(value || ""), MAX_RESPONSE_ERROR_TEXT_LENGTH);
+  return safeDisplayError(capped, "");
+}
+
+function parseJsonPayload(text, response) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    return {};
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(trimmed);
+  } catch {
+    const detail = safeResponseErrorDetail(trimmed);
+    if (!response.ok) {
+      throw new Error(detail || `${t("requestFailed")}: ${response.status}`);
+    }
+    throw new Error(detail ? `${t("invalidResponse")}: ${detail}` : t("invalidResponse"));
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    if (!response.ok) {
+      throw new Error(`${t("requestFailed")}: ${response.status}`);
+    }
+    throw new Error(t("invalidResponse"));
+  }
+
+  return payload;
+}
+
 async function requestJson(url, options = {}) {
   const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
   const controller = new AbortController();
@@ -1303,18 +1438,10 @@ async function requestJson(url, options = {}) {
     }
   }
 
-  let payload = {};
-
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = { error: text };
-    }
-  }
+  const payload = parseJsonPayload(text, response);
 
   if (!response.ok) {
-    throw new Error(payload.error || `${t("requestFailed")}: ${response.status}`);
+    throw new Error(safeDisplayError(payload.error || `${t("requestFailed")}: ${response.status}`));
   }
 
   return payload;
@@ -1459,7 +1586,7 @@ function showToast(message, tone = "info") {
 }
 
 function showActionError(error, status = actionStatusElement()) {
-  const message = String(error?.message || error || t("requestFailed"));
+  const message = safeDisplayError(error);
   if (status) {
     status.textContent = message;
   }
@@ -1743,7 +1870,8 @@ function renderStats(stats) {
 
   for (const node of elements.stats.querySelectorAll("[data-source-filter]")) {
     node.addEventListener("click", () => {
-      state.sourceFilter = node.getAttribute("data-source-filter") || "";
+      const nextSourceFilter = node.getAttribute("data-source-filter") || "";
+      state.sourceFilter = state.sourceFilter === nextSourceFilter ? "" : nextSourceFilter;
       setActiveSidebarSection("sidebar-sessions");
       elements.sessionsSection?.scrollIntoView({
         behavior: "smooth",
@@ -1751,7 +1879,7 @@ function renderStats(stats) {
         inline: "nearest"
       });
       loadSessions().catch((error) => {
-        showToast(String(error.message || error), "warning");
+        showToast(safeDisplayError(error), "warning");
       });
     });
   }
@@ -1793,7 +1921,7 @@ function renderStats(stats) {
           inline: "nearest"
         });
         loadSessions().catch((error) => {
-          showToast(String(error.message || error), "warning");
+          showToast(safeDisplayError(error), "warning");
         });
       });
     }
@@ -1893,8 +2021,8 @@ function annotationPanelHtml(tagValue, noteValue) {
       </summary>
       <div class="annotation-content">
         <div class="annotation-grid">
-          <input class="annotation-input" id="tag-input" type="text" value="${escapeHtml(tagValue)}" placeholder="${escapeHtml(t("tags"))}" />
-          <textarea class="annotation-textarea" id="note-input" placeholder="${escapeHtml(t("note"))}">${escapeHtml(noteValue)}</textarea>
+          <input class="annotation-input" id="tag-input" type="text" value="${escapeHtml(tagValue)}" maxlength="${MAX_TAG_INPUT_LENGTH}" placeholder="${escapeHtml(t("tags"))}" />
+          <textarea class="annotation-textarea" id="note-input" maxlength="${MAX_NOTE_TEXT_LENGTH}" placeholder="${escapeHtml(t("note"))}">${escapeHtml(noteValue)}</textarea>
         </div>
         <div class="annotation-actions">
           <button class="secondary-button action-button" id="save-note-button" type="button">
@@ -2042,15 +2170,24 @@ function renderSessionDetail(session) {
         label.textContent = t("saving");
       }
 
-      const tags = elements.sessionDetail.querySelector("#tag-input").value
+      const tags = normalizeAnnotationTags(elements.sessionDetail.querySelector("#tag-input").value
         .split(",")
         .map((tag) => tag.trim())
-        .filter(Boolean);
-      const noteText = elements.sessionDetail.querySelector("#note-input").value;
+        .filter(Boolean));
+      const noteText = normalizeAnnotationNote(elements.sessionDetail.querySelector("#note-input").value);
+      if (!annotationDraftChanged(annotation, tags, noteText)) {
+        const status = annotationStatusElement();
+        const message = t("noChangesToSave");
+        if (status) {
+          status.textContent = message;
+        }
+        showToast(message, "success");
+        return;
+      }
       await saveAnnotation(session.id, { tags, noteText });
       showToast(`${t("saved")}.`, "success");
     } catch (error) {
-      const message = String(error.message || error);
+      const message = safeDisplayError(error);
       const status = annotationStatusElement();
       if (status) {
         status.textContent = message;
@@ -2308,6 +2445,7 @@ function renderSessionDetail(session) {
 
 function currentListStateLabel() {
   const segments = [];
+  const normalizedQuery = normalizeSearchQuery(state.query);
 
   if (state.sourceFilter) {
     segments.push(state.sourceFilter.charAt(0).toUpperCase() + state.sourceFilter.slice(1));
@@ -2323,18 +2461,29 @@ function currentListStateLabel() {
     segments.push(t("archived"));
   }
 
-  if (state.query) {
-    segments.push(`${t("searchPrefix")}: "${state.query}"`);
+  if (normalizedQuery) {
+    segments.push(`${t("searchPrefix")}: "${normalizedQuery}"`);
   }
 
   return segments.join(" / ");
 }
 
+function renderNoSessionSelected() {
+  updateSessionUrl("", true);
+  elements.sessionDetail.classList.add("empty-state");
+  elements.sessionDetail.innerHTML = `
+    <h2>${escapeHtml(t("selectSession"))}</h2>
+    <p class="muted">${escapeHtml(t("noSessionSelected"))}</p>
+  `;
+}
+
 async function loadSessions() {
   const sequence = ++loadSequence;
   const params = new URLSearchParams();
-  if (state.query) {
-    params.set("q", state.query);
+  const normalizedQuery = normalizeSearchQuery(state.query);
+  state.query = normalizedQuery;
+  if (normalizedQuery) {
+    params.set("q", normalizedQuery);
   }
   if (state.sourceFilter) {
     params.set("sourceId", state.sourceFilter);
@@ -2362,27 +2511,40 @@ async function loadSessions() {
   if (!state.selectedSessionId && urlSessionId) {
     state.selectedSessionId = urlSessionId;
   }
+  const preserveUrlSelection = Boolean(urlSessionId && state.selectedSessionId === urlSessionId);
 
   if (!state.selectedSessionId && state.sessions.length > 0) {
     state.selectedSessionId = state.sessions[0].id;
   }
 
-  if (state.selectedSessionId && !state.sessions.find((session) => session.id === state.selectedSessionId)) {
+  if (state.selectedSessionId && !preserveUrlSelection && !state.sessions.find((session) => session.id === state.selectedSessionId)) {
     state.selectedSessionId = state.sessions[0]?.id || null;
   }
 
   renderSessionList();
 
   if (state.selectedSessionId) {
-    await selectSession(state.selectedSessionId, false);
-    updateSessionUrl(state.selectedSessionId, true);
+    const selectedSessionId = state.selectedSessionId;
+    try {
+      await selectSession(selectedSessionId, false);
+      updateSessionUrl(state.selectedSessionId, true);
+    } catch (error) {
+      if (!preserveUrlSelection || selectedSessionId !== urlSessionId) {
+        throw error;
+      }
+
+      showToast(safeDisplayError(error), "warning");
+      state.selectedSessionId = state.sessions[0]?.id || null;
+      renderSessionList();
+      if (state.selectedSessionId) {
+        await selectSession(state.selectedSessionId, false);
+        updateSessionUrl(state.selectedSessionId, true);
+      } else {
+        renderNoSessionSelected();
+      }
+    }
   } else {
-    updateSessionUrl("", true);
-    elements.sessionDetail.classList.add("empty-state");
-    elements.sessionDetail.innerHTML = `
-      <h2>${escapeHtml(t("selectSession"))}</h2>
-      <p class="muted">${escapeHtml(t("noSessionSelected"))}</p>
-    `;
+    renderNoSessionSelected();
   }
 }
 
@@ -2419,19 +2581,24 @@ async function saveAnnotation(sessionId, payload) {
 }
 
 async function selectSession(sessionId, rerenderList = true, syncUrl = true) {
-  if (!sessionId) {
+  const normalizedSessionId = normalizeSessionId(sessionId || "");
+  if (!normalizedSessionId) {
     return;
   }
 
-  state.selectedSessionId = sessionId;
+  const sequence = ++selectSessionSequence;
+  state.selectedSessionId = normalizedSessionId;
   if (syncUrl) {
-    updateSessionUrl(sessionId, !rerenderList);
+    updateSessionUrl(normalizedSessionId, !rerenderList);
   }
   if (rerenderList) {
     renderSessionList();
   }
 
-  const session = await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  const session = await requestJson(`/api/sessions/${encodeURIComponent(normalizedSessionId)}`);
+  if (sequence !== selectSessionSequence || state.selectedSessionId !== normalizedSessionId) {
+    return;
+  }
   renderSessionDetail(session);
 }
 
@@ -2460,16 +2627,16 @@ async function runScan() {
 
 elements.scanButton.addEventListener("click", () => {
   runScan().catch((error) => {
-    showToast(String(error.message || error), "warning");
+    showToast(safeDisplayError(error), "warning");
   });
 });
 
 elements.searchInput.addEventListener("input", () => {
-  state.query = elements.searchInput.value.trim();
+  state.query = normalizeSearchQuery(elements.searchInput.value);
   window.clearTimeout(searchTimer);
   searchTimer = window.setTimeout(() => {
     loadSessions().catch((error) => {
-      showToast(String(error.message || error), "warning");
+      showToast(safeDisplayError(error), "warning");
     });
   }, 140);
 });
@@ -2477,14 +2644,14 @@ elements.searchInput.addEventListener("input", () => {
 elements.favoritesOnly.addEventListener("change", () => {
   setStatusView(elements.favoritesOnly.checked ? "favorites" : "all");
   loadSessions().catch((error) => {
-    showToast(String(error.message || error), "warning");
+    showToast(safeDisplayError(error), "warning");
   });
 });
 
 elements.includeArchived.addEventListener("change", () => {
   setStatusView(elements.includeArchived.checked ? "archived" : "all");
   loadSessions().catch((error) => {
-    showToast(String(error.message || error), "warning");
+    showToast(safeDisplayError(error), "warning");
   });
 });
 
@@ -2558,7 +2725,7 @@ elements.openBrowserButton?.addEventListener("click", async () => {
       window.location.href = fallbackUrl;
       return;
     }
-    showToast(String(error.message || error), "warning");
+    showToast(safeDisplayError(error), "warning");
   } finally {
     button.disabled = false;
     setButtonLabel(button, originalLabel);
@@ -2590,7 +2757,7 @@ window.addEventListener("popstate", () => {
   }
 
   selectSession(nextSessionId, true, false).catch((error) => {
-    showToast(String(error.message || error), "warning");
+    showToast(safeDisplayError(error), "warning");
   });
 });
 
@@ -2607,6 +2774,6 @@ announceHostBridgePresence();
 loadSessions().catch((error) => {
   elements.sessionDetail.innerHTML = `
     <h2>${escapeHtml(t("loadFailed"))}</h2>
-    <p>${escapeHtml(String(error.message || error))}</p>
+    <p>${escapeHtml(safeDisplayError(error))}</p>
   `;
 });

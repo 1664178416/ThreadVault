@@ -4,6 +4,12 @@ import fs from "node:fs";
 import { EXPORT_DIR, MEMORY_DIR } from "../config.js";
 import { getSessionDetail } from "../db/repository.js";
 import { ensureDir, writeText } from "../utils/fs.js";
+import { hashText } from "../utils/text.js";
+
+const MAX_SLUG_LENGTH = 80;
+const MAX_MARKDOWN_BASENAME_LENGTH = 120;
+const SESSION_FILENAME_HASH_LENGTH = 10;
+const MAX_UNIQUE_MARKDOWN_ATTEMPTS = 1000;
 
 const WINDOWS_RESERVED_NAMES = new Set([
   "con",
@@ -30,15 +36,25 @@ const WINDOWS_RESERVED_NAMES = new Set([
   "lpt9"
 ]);
 
-function slugify(value, fallback = "session") {
+function trimSlug(slug, maxLength = MAX_SLUG_LENGTH) {
+  if (slug.length <= maxLength) {
+    return slug;
+  }
+
+  return slug.slice(0, maxLength).replace(/-+$/g, "") || slug.slice(0, maxLength);
+}
+
+function slugify(value, fallback = "session", maxLength = MAX_SLUG_LENGTH) {
   const slug = String(value || fallback)
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || fallback;
+    || fallback;
 
-  return WINDOWS_RESERVED_NAMES.has(slug) ? `${slug}-item` : slug;
+  const trimmed = trimSlug(slug, maxLength);
+
+  return WINDOWS_RESERVED_NAMES.has(trimmed) ? `${trimmed}-item` : trimmed;
 }
 
 function dateBucket(session) {
@@ -50,8 +66,42 @@ function dateBucket(session) {
   return `${year}-${month}-${day}`;
 }
 
+function compactBaseName(baseName, suffix = "", maxLength = MAX_MARKDOWN_BASENAME_LENGTH) {
+  const safeSuffix = String(suffix || "");
+  const available = Math.max(1, maxLength - safeSuffix.length);
+  return `${trimSlug(baseName, available)}${safeSuffix}`;
+}
+
+function sessionFileNameHash(session) {
+  return hashText([
+    session.id,
+    session.sourceId,
+    session.sourceSessionId,
+    session.title
+  ].map((value) => String(value || "")).join("\u001f")).slice(0, SESSION_FILENAME_HASH_LENGTH);
+}
+
+function sessionBaseName(session) {
+  const titleSlug = slugify(session.title);
+  const threadSlug = slugify(session.sourceSessionId || session.id, "thread");
+  const baseName = `${titleSlug}-${threadSlug}`;
+
+  if (baseName.length <= MAX_MARKDOWN_BASENAME_LENGTH) {
+    return baseName;
+  }
+
+  const hashSuffix = `-${sessionFileNameHash(session)}`;
+  const compactBudget = MAX_MARKDOWN_BASENAME_LENGTH - hashSuffix.length;
+  const titleBudget = Math.max(24, Math.floor(compactBudget * 0.58));
+  const compactTitle = trimSlug(titleSlug, titleBudget);
+  const threadBudget = Math.max(1, compactBudget - compactTitle.length - 1);
+  const compactThread = trimSlug(threadSlug, threadBudget);
+
+  return compactBaseName(`${compactTitle}-${compactThread}`, hashSuffix);
+}
+
 function sessionFileName(session) {
-  return `${slugify(session.title)}-${slugify(session.sourceSessionId || session.id, "thread")}.md`;
+  return `${sessionBaseName(session)}.md`;
 }
 
 function oneLine(value, fallback = "Unknown") {
@@ -74,6 +124,18 @@ function markdownHeading(value, fallback = "Untitled Session") {
   return markdownInline(value, fallback).replace(/^#+\s*/, "");
 }
 
+function messageRoleHeading(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  const labels = {
+    assistant: "Assistant",
+    system: "System",
+    tool: "Tool",
+    user: "User"
+  };
+
+  return markdownHeading(labels[normalized] || role, "Message");
+}
+
 function markdownListValue(value, fallback = "Unknown") {
   return markdownInline(value, fallback).replace(/^([-*+]|\d+\.)\s+/, "\\$&");
 }
@@ -91,14 +153,18 @@ function ensureInsideDirectory(rootDir, targetPath) {
 function uniqueMarkdownPath(directory, fileName) {
   const safeDirectory = path.resolve(directory);
   const parsed = path.parse(fileName);
-  const baseName = parsed.name || "session";
+  const baseName = compactBaseName(parsed.name || "session");
   const extension = parsed.ext || ".md";
   let candidate = ensureInsideDirectory(safeDirectory, path.join(safeDirectory, `${baseName}${extension}`));
   let index = 2;
 
-  while (fs.existsSync(candidate)) {
-    candidate = ensureInsideDirectory(safeDirectory, path.join(safeDirectory, `${baseName}-${index}${extension}`));
+  while (fs.existsSync(candidate) && index <= MAX_UNIQUE_MARKDOWN_ATTEMPTS) {
+    candidate = ensureInsideDirectory(safeDirectory, path.join(safeDirectory, `${compactBaseName(baseName, `-${index}`)}${extension}`));
     index += 1;
+  }
+
+  if (fs.existsSync(candidate)) {
+    throw new Error("Unable to create a unique Markdown file path after many attempts.");
   }
 
   return candidate;
@@ -152,6 +218,7 @@ function buildMarkdown(session, action = "export") {
     "> Exported from ThreadVault. This file may contain private prompts, paths, notes, and transcripts.",
     "",
     "- ThreadVault action: " + markdownListValue(action),
+    "- ThreadVault session id: " + markdownListValue(session.id),
     "- Source: " + markdownListValue(session.sourceLabel),
     "- Source session id: " + markdownListValue(session.sourceSessionId),
     "- Source path: " + sourcePath,
@@ -173,9 +240,14 @@ function buildMarkdown(session, action = "export") {
   lines.push("## Transcript");
   lines.push("");
 
-  for (const message of session.messages) {
-    lines.push(`### ${markdownHeading(message.role, "Message")}`);
+  for (const [index, message] of session.messages.entries()) {
+    const turnNumber = index + 1;
+    lines.push(`### ${turnNumber}. ${messageRoleHeading(message.role)}`);
     lines.push("");
+    lines.push(`- Turn: ${turnNumber}`);
+    if (message.id) {
+      lines.push(`- Message id: ${markdownListValue(message.id)}`);
+    }
     lines.push(`- Timestamp: ${markdownListValue(message.timestamp)}`);
     if (message.model) {
       lines.push(`- Model: ${markdownListValue(message.model)}`);

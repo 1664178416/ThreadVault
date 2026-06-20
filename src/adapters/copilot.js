@@ -4,7 +4,7 @@ import path from "node:path";
 import { COPILOT_EMPTY_WINDOW_DIR } from "../config.js";
 import { listFiles, parseErrorSummary, readJsonFile, sortByModifiedDesc } from "../utils/fs.js";
 import { applyJsonLineOperations } from "../utils/jsonPatch.js";
-import { displayText, deriveTitle, hasInternalContext, hashText, snippet } from "../utils/text.js";
+import { displayText, deriveTitle, hasInternalContext, hashSessionMessages, hashText, safeErrorMessage, snippet } from "../utils/text.js";
 import { toIsoFromEpoch } from "../utils/time.js";
 
 function flattenResponseChunks(response = []) {
@@ -132,9 +132,7 @@ function normalizeSession(rawSession, filePath) {
     sessionId,
     workspacePath || "",
     title,
-    messages.length,
-    snippet(messages[0]?.content || "", 80),
-    snippet(messages[messages.length - 1]?.content || "", 80)
+    hashSessionMessages(messages)
   ].join("|"));
 
   return {
@@ -209,6 +207,7 @@ export function scanCopilotSessions() {
       }
       sessions.push(normalized);
     } catch (error) {
+      const parseError = safeErrorMessage(error, "Session file could not be parsed.");
       sessions.push({
         id: `copilot:error:${path.basename(filePath)}`,
         sourceId: "copilot",
@@ -223,10 +222,10 @@ export function scanCopilotSessions() {
         fingerprint: hashText(`error|${filePath}`),
         sourcePath: filePath,
         status: "parse_error",
-        summary: String(error.message || error),
+        summary: parseError,
         parseConfidence: 0,
         metadata: {
-          error: String(error.message || error)
+          error: parseError
         },
         messages: []
       });

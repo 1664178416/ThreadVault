@@ -1,8 +1,25 @@
 import crypto from "node:crypto";
 import path from "node:path";
 
+const MAX_SAFE_ERROR_LENGTH = 360;
+
 export function hashText(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+export function hashSessionMessages(messages = []) {
+  const separator = "\u001f";
+  const recordSeparator = "\u001e";
+  const payload = (Array.isArray(messages) ? messages : []).map((message) => [
+    message?.ordinal ?? "",
+    message?.role || "",
+    message?.content || "",
+    message?.timestamp || "",
+    message?.model || "",
+    ...(Array.isArray(message?.referencedFiles) ? message.referencedFiles : [])
+  ].join(separator)).join(recordSeparator);
+
+  return hashText(payload);
 }
 
 export function snippet(value, maxLength = 120) {
@@ -119,4 +136,46 @@ export function basenameFromPath(filePath) {
   }
 
   return path.basename(filePath);
+}
+
+export function safeErrorMessage(error, fallback = "Operation failed.") {
+  const raw = error instanceof Error ? error.message : String(error || "");
+  const normalized = normalizeWhitespace(raw) || fallback;
+  const redacted = redactSensitiveText(redactLocalPaths(normalized));
+
+  return snippet(redacted, MAX_SAFE_ERROR_LENGTH) || fallback;
+}
+
+export function redactLocalPath(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  return redactLocalPaths(text);
+}
+
+function redactLocalPaths(value) {
+  return String(value || "")
+    .replace(/\b[A-Za-z]:[\\/][^"'<>|?*\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, "[LOCAL_PATH]")
+    .replace(/\b[A-Za-z]:[\\/](?:[^<>:"|?*\s]+[\\/])*[^<>:"|?*\s]*/g, "[LOCAL_PATH]")
+    .replace(/(?:^|\s)\\\\[^\\/"'<>|?*\r\n]+\\[^"'<>|?*\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    })
+    .replace(/(?:^|\s)(?:\/Users|\/home|\/tmp|\/var\/folders)\/[^"'<>|\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    })
+    .replace(/(?:^|\s)(?:\/Users|\/home|\/tmp|\/var\/folders)\/[^\s"'<>]+/g, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    });
+}
+
+function redactSensitiveText(value) {
+  return String(value || "")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
+    .replace(/\b(?:sk|pk|ghp|gho|github_pat|glpat|xox[baprs])-[-_A-Za-z0-9]{12,}\b/g, "[SECRET]")
+    .replace(/\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*["']?[-_A-Za-z0-9./+=]{8,}["']?/gi, "$1=[SECRET]");
 }

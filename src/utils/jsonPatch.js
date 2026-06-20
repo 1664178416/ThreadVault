@@ -1,3 +1,5 @@
+import { safeErrorMessage } from "./text.js";
+
 function cloneValue(value) {
   return structuredClone(value);
 }
@@ -34,7 +36,7 @@ export function applyJsonLineOperations(lines) {
       if (errorSamples.length < MAX_PARSE_ERROR_SAMPLES) {
         errorSamples.push({
           line: index + 1,
-          error: String(error.message || error)
+          error: safeErrorMessage(error, "JSON patch line could not be parsed.")
         });
       }
       errorTotal += 1;

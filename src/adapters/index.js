@@ -1,6 +1,7 @@
 import { scanClaudeSessions } from "./claude.js";
 import { scanCodexSessions } from "./codex.js";
 import { scanCopilotSessions } from "./copilot.js";
+import { safeErrorMessage } from "../utils/text.js";
 
 const ADAPTERS = [
   {
@@ -39,7 +40,7 @@ export function scanAllSources() {
         sourceId: adapter.id,
         sourceLabel: adapter.label,
         scannedCount: 0,
-        error: String(error.message || error)
+        error: safeErrorMessage(error, "Source scan failed.")
       });
     }
   }

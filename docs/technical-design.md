@@ -67,6 +67,10 @@ The VS Code extension uses its global storage directory by default when installe
 - Static file serving rejects path traversal.
 - Request bodies are limited to 1 MB.
 - Browser responses include security headers and a restrictive CSP.
+- Server, browser, and extension error paths redact local paths, UNC/network share paths, email addresses, and common token/secret patterns before display.
+- The browser API client accepts JSON object responses only; unexpected text or HTML is converted into a sanitized protocol error.
+- Open actions validate saved target shape before launching VS Code: source targets must be files, and workspace targets must be folders or `.code-workspace` files.
+- Export and memory filenames are sanitized, compacted, kept inside their configured directories, and bounded when searching for a unique Markdown path.
 - Generated data, SQLite files, exports, memory notes, logs, and VSIX files are ignored by Git.
 
 ## VS Code Extension
@@ -95,6 +99,7 @@ When installed from VSIX or Marketplace, the extension copies the bundled app in
 - Search fallback and query limit behavior
 - CORS/write-origin behavior
 - Real HTTP behavior for root page, security headers, path traversal, health diagnostics, cross-origin writes, and oversized request bodies
+- Error redaction, open-target shape checks, bounded Markdown filenames, and frontend response parsing guardrails
 
 Before packaging or publishing:
 

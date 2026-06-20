@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { CLAUDE_PROJECTS_DIR } from "../config.js";
 import { listFilesRecursive, parseErrorSummary, readJsonLines, sortByModifiedDesc } from "../utils/fs.js";
-import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashText, isLowSignalTitle, snippet } from "../utils/text.js";
+import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashSessionMessages, hashText, isLowSignalTitle, safeErrorMessage, snippet } from "../utils/text.js";
 
 function detectClaudeSource() {
   return fs.existsSync(CLAUDE_PROJECTS_DIR);
@@ -182,9 +182,7 @@ function normalizeSession(records, filePath) {
     workspacePath || "",
     title,
     createdAt || "",
-    messages.length,
-    snippet(messages[0]?.content || "", 80),
-    snippet(messages[messages.length - 1]?.content || "", 80)
+    hashSessionMessages(messages)
   ].join("|"));
 
   return {
@@ -231,6 +229,7 @@ export function scanClaudeSessions() {
         sessions.push(normalized);
       }
     } catch (error) {
+      const parseError = safeErrorMessage(error, "Session file could not be parsed.");
       sessions.push({
         id: `claude:error:${path.basename(filePath)}`,
         sourceId: "claude",
@@ -245,10 +244,10 @@ export function scanClaudeSessions() {
         fingerprint: hashText(`claude:error|${filePath}`),
         sourcePath: filePath,
         status: "parse_error",
-        summary: String(error.message || error),
+        summary: parseError,
         parseConfidence: 0,
         metadata: {
-          error: String(error.message || error)
+          error: parseError
         },
         messages: []
       });

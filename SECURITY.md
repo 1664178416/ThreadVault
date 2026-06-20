@@ -33,6 +33,10 @@ If GitHub private vulnerability reporting is enabled for the repository, prefer 
 - Request bodies are size-limited.
 - Browser responses include security headers and a restrictive CSP.
 - VS Code webview actions use a tokenized host bridge.
+- API, browser UI, and extension error messages redact local paths, UNC/network share paths, email addresses, and common token/secret formats before display.
+- Browser API responses are parsed as JSON objects; unexpected HTML/text responses are treated as sanitized protocol errors instead of being passed through raw.
+- Source/workspace open actions validate saved targets before launching VS Code. Source targets must be files, and workspace targets must be folders or `.code-workspace` files.
+- Markdown export and memory-save filenames are sanitized, compacted, and bounded to avoid path traversal and unbounded unique-name loops.
 - Generated data, SQLite files, exports, memory notes, logs, and VSIX files are ignored by Git.
 
 Please treat any change that weakens these defaults as security-sensitive.

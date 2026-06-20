@@ -14,6 +14,10 @@ const HEALTH_APP_NAME = "ThreadVault";
 const MIN_NODE_MAJOR = 24;
 const RUNTIME_APP_DIRNAME = "runtime-app";
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_EXTENSION_ERROR_LENGTH = 360;
+const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000;
+const MAX_SESSION_ID_LENGTH = 512;
+const VALID_OPEN_TARGETS = new Set(["source", "workspace"]);
 
 let serverProcess = null;
 let outputChannel = null;
@@ -85,12 +89,78 @@ function logLine(message) {
 }
 
 function setServerError(message) {
-  lastServerError = message;
-  logLine(message);
+  const safeMessage = safeExtensionMessage(message, "ThreadVault server error.");
+  lastServerError = safeMessage;
+  logLine(safeMessage);
 }
 
 function errorMessage(error) {
-  return error?.message || String(error || "Unknown error");
+  return safeExtensionMessage(error?.message || String(error || ""), "Unknown error");
+}
+
+function safeExtensionMessage(value, fallback = "Operation failed.") {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim() || fallback;
+  const redacted = redactSensitiveText(redactLocalPaths(normalized));
+  if (redacted.length <= MAX_EXTENSION_ERROR_LENGTH) {
+    return redacted;
+  }
+
+  return `${redacted.slice(0, MAX_EXTENSION_ERROR_LENGTH - 3).trimEnd()}...`;
+}
+
+function redactLocalPaths(value) {
+  return String(value || "")
+    .replace(/\b[A-Za-z]:[\\/][^"'<>|?*\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, "[LOCAL_PATH]")
+    .replace(/\b[A-Za-z]:[\\/](?:[^<>:"|?*\s]+[\\/])*[^<>:"|?*\s]*/g, "[LOCAL_PATH]")
+    .replace(/(?:^|\s)\\\\[^\\/"'<>|?*\r\n]+\\[^"'<>|?*\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    })
+    .replace(/(?:^|\s)(?:\/Users|\/home|\/tmp|\/var\/folders)\/[^"'<>|\r\n]*?(?=\s+(?:api[_-]?key|email|password|secret|token)\s*[:=]|\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|$)/gi, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    })
+    .replace(/(?:^|\s)(?:\/Users|\/home|\/tmp|\/var\/folders)\/[^\s"'<>]+/g, (match) => {
+      const prefix = match.startsWith(" ") ? " " : "";
+      return `${prefix}[LOCAL_PATH]`;
+    });
+}
+
+function redactSensitiveText(value) {
+  return String(value || "")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
+    .replace(/\b(?:sk|pk|ghp|gho|github_pat|glpat|xox[baprs])-[-_A-Za-z0-9]{12,}\b/g, "[SECRET]")
+    .replace(/\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*["']?[-_A-Za-z0-9./+=]{8,}["']?/gi, "$1=[SECRET]");
+}
+
+function safeResponseErrorDetail(value) {
+  const text = String(value || "");
+  const capped = text.length > MAX_RESPONSE_ERROR_TEXT_LENGTH
+    ? `${text.slice(0, MAX_RESPONSE_ERROR_TEXT_LENGTH - 3).trimEnd()}...`
+    : text;
+  return safeExtensionMessage(capped, "");
+}
+
+function parseResponsePayload(body, statusCode) {
+  const text = String(body || "").trim();
+  if (!text) {
+    return {};
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    const detail = safeResponseErrorDetail(text || error.message);
+    const prefix = `ThreadVault returned invalid JSON (${statusCode || 0})`;
+    throw new Error(detail ? `${prefix}: ${detail}` : prefix);
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error(`ThreadVault returned unexpected JSON (${statusCode || 0}).`);
+  }
+
+  return payload;
 }
 
 function runCommandSafely(label, callback) {
@@ -116,7 +186,7 @@ function rememberServerStderr(text) {
     return;
   }
 
-  logLine(text);
+  logLine(safeExtensionMessage(text, "Server log message."));
 }
 
 function extensionConfig() {
@@ -171,11 +241,24 @@ function dashboardBaseUrl() {
   return `http://${urlHost(configuredClientHost())}:${configuredPort()}`;
 }
 
+function normalizeSessionId(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const sessionId = value.trim();
+  if (!sessionId || sessionId.length > MAX_SESSION_ID_LENGTH || /[\u0000-\u001f\u007f]/u.test(sessionId)) {
+    return "";
+  }
+
+  return sessionId;
+}
+
 function configuredNodePath() {
   return String(extensionConfig().get("nodePath", "") || "").trim() || "node";
 }
 
-function expandPath(value) {
+function expandPath(value, basePath = process.cwd()) {
   const text = String(value || "").trim();
   if (!text) {
     return "";
@@ -189,11 +272,11 @@ function expandPath(value) {
     return path.join(os.homedir(), text.slice(2));
   }
 
-  return path.resolve(text);
+  return path.resolve(basePath, text);
 }
 
 function configuredPath(key, fallbackPath) {
-  return expandPath(extensionConfig().get(key, "")) || fallbackPath;
+  return expandPath(extensionConfig().get(key, ""), path.dirname(fallbackPath)) || fallbackPath;
 }
 
 function serverConfigSignature(runtime) {
@@ -385,7 +468,7 @@ function request(method, route, options = {}) {
         method
       },
       (res) => {
-        let body = "";
+        const chunks = [];
         let receivedBytes = 0;
         res.setTimeout(timeoutMs, () => {
           req.destroy(new Error(`ThreadVault response timed out after ${timeoutMs}ms.`));
@@ -397,24 +480,23 @@ function request(method, route, options = {}) {
             return;
           }
 
-          body += chunk.toString();
+          chunks.push(Buffer.from(chunk));
         });
         res.on("error", (error) => settle(reject, error));
         res.on("end", () => {
-          let payload = {};
+          const body = Buffer.concat(chunks, receivedBytes).toString("utf8");
           try {
-            payload = JSON.parse(body || "{}");
+            const payload = parseResponsePayload(body, res.statusCode);
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+              settle(reject, new Error(safeExtensionMessage(payload.error || `ThreadVault request failed with status ${res.statusCode}.`)));
+              return;
+            }
+
+            settle(resolve, payload);
           } catch (error) {
-            settle(reject, new Error(`ThreadVault returned invalid JSON (${res.statusCode || 0}): ${body || error.message}`));
+            settle(reject, error);
             return;
           }
-
-          if (res.statusCode < 200 || res.statusCode >= 300) {
-            settle(reject, new Error(payload.error || `ThreadVault request failed with status ${res.statusCode}.`));
-            return;
-          }
-
-          settle(resolve, payload);
         });
       }
     );
@@ -657,7 +739,7 @@ function browserDashboardUrl(candidateUrl) {
       return baseUrl.toString();
     }
 
-    const sessionId = parsedUrl.searchParams.get("session") || "";
+    const sessionId = normalizeSessionId(parsedUrl.searchParams.get("session") || "");
     if (sessionId) {
       baseUrl.searchParams.set("session", sessionId);
     }
@@ -693,31 +775,44 @@ function isWorkspaceFile(targetPath) {
   return targetPath.toLowerCase().endsWith(".code-workspace");
 }
 
+function safeStat(targetPath) {
+  try {
+    return fs.statSync(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+function redactedPath(targetPath) {
+  return targetPath ? "[LOCAL_PATH]" : "";
+}
+
+function openErrorResult(error, target, targetPath) {
+  const safeError = safeExtensionMessage(error, "Open action failed.");
+  logLine(`Open failed: ${safeError}`);
+  return {
+    ok: false,
+    error: safeError,
+    target,
+    path: redactedPath(targetPath)
+  };
+}
+
 async function openPathInVsCode(targetPath, target) {
-  if (!targetPath || !fs.existsSync(targetPath)) {
-    const error = openTargetMissingMessage(target, targetPath);
-    logLine(`Open failed: ${error}`);
-    return {
-      ok: false,
-      error,
-      target,
-      path: targetPath || ""
-    };
+  if (!VALID_OPEN_TARGETS.has(target)) {
+    return openErrorResult("Open target must be source or workspace.", target, "");
   }
 
-  const stat = fs.statSync(targetPath);
+  const stat = targetPath ? safeStat(targetPath) : null;
+  if (!targetPath || !stat) {
+    return openErrorResult(openTargetMissingMessage(target, targetPath), target, targetPath);
+  }
+
   const targetUri = vscode.Uri.file(targetPath);
 
   if (target === "workspace") {
     if (!stat.isDirectory() && !isWorkspaceFile(targetPath)) {
-      const error = `The saved workspace path is not a folder or .code-workspace file: ${targetPath}`;
-      logLine(`Open failed: ${error}`);
-      return {
-        ok: false,
-        error,
-        target,
-        path: targetPath
-      };
+      return openErrorResult(`The saved workspace path is not a folder or .code-workspace file: ${targetPath}`, target, targetPath);
     }
 
     logLine(`Opening workspace path in VS Code: ${targetPath}`);
@@ -732,14 +827,7 @@ async function openPathInVsCode(targetPath, target) {
   }
 
   if (stat.isDirectory()) {
-    const error = `The saved source path is a folder, not a transcript file: ${targetPath}`;
-    logLine(`Open failed: ${error}`);
-    return {
-      ok: false,
-      error,
-      target,
-      path: targetPath
-    };
+    return openErrorResult(`The saved source path is a folder, not a transcript file: ${targetPath}`, target, targetPath);
   }
 
   logLine(`Opening source file in VS Code: ${targetPath}`);
@@ -837,7 +925,7 @@ function activate(context) {
             postPanelMessage(panel, hostToken, {
               requestId: message.requestId,
               ok: false,
-              error: error.message || String(error)
+              error: errorMessage(error)
             });
           }
           return;
@@ -857,7 +945,7 @@ function activate(context) {
           postPanelMessage(panel, hostToken, {
             requestId: message.requestId,
             ok: false,
-            error: error.message || String(error)
+            error: errorMessage(error)
           });
         }
       });

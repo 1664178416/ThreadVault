@@ -5,6 +5,7 @@ import { pathToFileURL, URL } from "node:url";
 
 import { APP_HOST, APP_NAME, APP_PORT, DATA_DIR, PUBLIC_DIR, RUNTIME_FINGERPRINT } from "./config.js";
 import { ensureDir } from "./utils/fs.js";
+import { safeErrorMessage } from "./utils/text.js";
 import { runFullScan, getDashboardData, getSessionById, saveSessionAnnotation } from "./services/indexer.js";
 import { openSessionTargetInVsCode } from "./services/actions.js";
 import { exportSessionToMarkdown, saveSessionToMemory } from "./services/exporter.js";
@@ -12,6 +13,8 @@ import { exportSessionToMarkdown, saveSessionToMemory } from "./services/exporte
 ensureDir(DATA_DIR);
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_SESSION_ID_LENGTH = 512;
+const MAX_SOURCE_ID_LENGTH = 128;
 const LOOPBACK_WRITE_HOSTS = ["127.0.0.1", "localhost", "::1"];
 
 function urlHost(host) {
@@ -81,8 +84,38 @@ function baseHeaders(request) {
   };
 }
 
-function hasSessionId(payload) {
-  return typeof payload.sessionId === "string" && payload.sessionId.trim().length > 0;
+function normalizeSessionId(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const sessionId = value.trim();
+  if (!sessionId || sessionId.length > MAX_SESSION_ID_LENGTH || /[\u0000-\u001f\u007f]/u.test(sessionId)) {
+    return "";
+  }
+
+  return sessionId;
+}
+
+function sessionIdFromPayload(payload) {
+  return normalizeSessionId(payload?.sessionId);
+}
+
+function normalizeSourceId(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const sourceId = value.trim();
+  if (!sourceId) {
+    return "";
+  }
+
+  if (sourceId.length > MAX_SOURCE_ID_LENGTH || /[\u0000-\u001f\u007f]/u.test(sourceId)) {
+    return null;
+  }
+
+  return sourceId;
 }
 
 function decodePathComponent(value) {
@@ -107,6 +140,13 @@ function sendJson(request, response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function sendError(request, response, statusCode, error, fallback = "Request failed.") {
+  sendJson(request, response, statusCode, {
+    ok: false,
+    error: safeErrorMessage(error, fallback)
+  });
+}
+
 function sendFile(request, response, filePath, contentType) {
   response.writeHead(200, {
     "Content-Type": contentType,
@@ -121,10 +161,7 @@ function sendFile(request, response, filePath, contentType) {
   const stream = fs.createReadStream(filePath);
   stream.on("error", (error) => {
     if (!response.headersSent) {
-      sendJson(request, response, 500, {
-        ok: false,
-        error: String(error.message || error)
-      });
+      sendError(request, response, 500, error);
     } else {
       response.destroy(error);
     }
@@ -208,8 +245,12 @@ function serveStatic(request, response, pathname) {
   sendFile(request, response, filePath, getContentType(filePath));
 }
 
+function isJsonObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function readBody(request, response, callback) {
-  let body = "";
+  const chunks = [];
   let receivedBytes = 0;
   let rejected = false;
 
@@ -225,14 +266,11 @@ function readBody(request, response, callback) {
       return;
     }
 
-    body += chunk.toString();
+    chunks.push(Buffer.from(chunk));
   });
   request.on("error", (error) => {
     if (!rejected && !response.headersSent) {
-      sendJson(request, response, 400, {
-        ok: false,
-        error: String(error.message || error)
-      });
+      sendError(request, response, 400, error, "Request body could not be read.");
     }
   });
   request.on("end", () => {
@@ -242,11 +280,17 @@ function readBody(request, response, callback) {
 
     let payload;
     try {
+      const body = Buffer.concat(chunks, receivedBytes).toString("utf8");
       payload = JSON.parse(body || "{}");
     } catch (error) {
+      sendError(request, response, 400, error, "Request body is not valid JSON.");
+      return;
+    }
+
+    if (!isJsonObject(payload)) {
       sendJson(request, response, 400, {
         ok: false,
-        error: String(error.message || error)
+        error: "Request body must be a JSON object."
       });
       return;
     }
@@ -254,18 +298,12 @@ function readBody(request, response, callback) {
     try {
       Promise.resolve(callback(payload)).catch((error) => {
         if (!response.headersSent) {
-          sendJson(request, response, 500, {
-            ok: false,
-            error: String(error.message || error)
-          });
+          sendError(request, response, 500, error);
         }
       });
     } catch (error) {
       if (!response.headersSent) {
-        sendJson(request, response, 500, {
-          ok: false,
-          error: String(error.message || error)
-        });
+        sendError(request, response, 500, error);
       }
     }
   });
@@ -306,7 +344,14 @@ function handleApi(request, response, url) {
 
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const query = url.searchParams.get("q") || "";
-    const sourceId = url.searchParams.get("sourceId") || "";
+    const sourceId = normalizeSourceId(url.searchParams.get("sourceId") || "");
+    if (sourceId === null) {
+      sendJson(request, response, 400, {
+        ok: false,
+        error: "Invalid source id."
+      });
+      return;
+    }
     const favoritesOnly = url.searchParams.get("favoritesOnly") === "1";
     const includeArchived = url.searchParams.get("includeArchived") === "1";
     const archivedOnly = url.searchParams.get("archivedOnly") === "1";
@@ -320,8 +365,9 @@ function handleApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname.startsWith("/api/sessions/")) {
-    const sessionId = decodePathComponent(url.pathname.replace("/api/sessions/", ""));
-    if (sessionId === null) {
+    const decodedSessionId = decodePathComponent(url.pathname.replace("/api/sessions/", ""));
+    const sessionId = normalizeSessionId(decodedSessionId);
+    if (decodedSessionId === null || !sessionId) {
       sendJson(request, response, 400, {
         ok: false,
         error: "Invalid session id encoding."
@@ -343,7 +389,8 @@ function handleApi(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/api/open") {
     readBody(request, response, async (payload) => {
-      if (!hasSessionId(payload)) {
+      const sessionId = sessionIdFromPayload(payload);
+      if (!sessionId) {
         sendJson(request, response, 400, {
           ok: false,
           error: "Session id is required."
@@ -360,13 +407,10 @@ function handleApi(request, response, url) {
       }
 
       try {
-        const result = await openSessionTargetInVsCode(payload.sessionId, payload.target);
+        const result = await openSessionTargetInVsCode(sessionId, payload.target);
         sendJson(request, response, result.ok ? 200 : 404, result);
       } catch (error) {
-        sendJson(request, response, 500, {
-          ok: false,
-          error: String(error.message || error)
-        });
+        sendError(request, response, 500, error);
       }
     });
     return;
@@ -374,7 +418,8 @@ function handleApi(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/api/session-meta") {
     readBody(request, response, (payload) => {
-      if (!hasSessionId(payload)) {
+      const sessionId = sessionIdFromPayload(payload);
+      if (!sessionId) {
         sendJson(request, response, 400, {
           ok: false,
           error: "Session id is required."
@@ -383,7 +428,7 @@ function handleApi(request, response, url) {
       }
 
       try {
-        const annotation = saveSessionAnnotation(payload.sessionId, {
+        const annotation = saveSessionAnnotation(sessionId, {
           favorite: payload.favorite,
           archived: payload.archived,
           tags: payload.tags,
@@ -402,10 +447,7 @@ function handleApi(request, response, url) {
           annotation
         });
       } catch (error) {
-        sendJson(request, response, 400, {
-          ok: false,
-          error: String(error.message || error)
-        });
+        sendError(request, response, 400, error, "Session annotation could not be saved.");
       }
     });
     return;
@@ -413,7 +455,8 @@ function handleApi(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/api/export") {
     readBody(request, response, (payload) => {
-      if (!hasSessionId(payload)) {
+      const sessionId = sessionIdFromPayload(payload);
+      if (!sessionId) {
         sendJson(request, response, 400, {
           ok: false,
           error: "Session id is required."
@@ -422,13 +465,10 @@ function handleApi(request, response, url) {
       }
 
       try {
-        const result = exportSessionToMarkdown(payload.sessionId);
+        const result = exportSessionToMarkdown(sessionId);
         sendJson(request, response, result.ok ? 200 : 404, result);
       } catch (error) {
-        sendJson(request, response, 500, {
-          ok: false,
-          error: String(error.message || error)
-        });
+        sendError(request, response, 500, error);
       }
     });
     return;
@@ -436,7 +476,8 @@ function handleApi(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/api/memory") {
     readBody(request, response, (payload) => {
-      if (!hasSessionId(payload)) {
+      const sessionId = sessionIdFromPayload(payload);
+      if (!sessionId) {
         sendJson(request, response, 400, {
           ok: false,
           error: "Session id is required."
@@ -445,13 +486,10 @@ function handleApi(request, response, url) {
       }
 
       try {
-        const result = saveSessionToMemory(payload.sessionId);
+        const result = saveSessionToMemory(sessionId);
         sendJson(request, response, result.ok ? 200 : 404, result);
       } catch (error) {
-        sendJson(request, response, 500, {
-          ok: false,
-          error: String(error.message || error)
-        });
+        sendError(request, response, 500, error);
       }
     });
     return;
@@ -475,10 +513,7 @@ export function createServer() {
       serveStatic(request, response, url.pathname);
     } catch (error) {
       if (!response.headersSent) {
-        sendJson(request, response, 500, {
-          ok: false,
-          error: String(error.message || error)
-        });
+        sendError(request, response, 500, error);
       } else {
         response.destroy(error);
       }

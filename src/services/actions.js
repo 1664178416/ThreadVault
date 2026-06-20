@@ -1,7 +1,8 @@
 import childProcess from "node:child_process";
-import fs from "node:fs";
 
 import { getSessionDetail } from "../db/repository.js";
+import { safeStat } from "../utils/fs.js";
+import { safeErrorMessage } from "../utils/text.js";
 
 const VALID_TARGETS = new Set(["source", "workspace"]);
 
@@ -15,15 +16,31 @@ function targetMissingMessage(target, targetPath) {
     return `This session does not include a saved ${label} path.`;
   }
 
-  return `The saved ${label} path no longer exists: ${targetPath}`;
+  return safeErrorMessage(`The saved ${label} path no longer exists: ${targetPath}`);
+}
+
+function isWorkspaceFile(targetPath) {
+  return targetPath.toLowerCase().endsWith(".code-workspace");
+}
+
+function targetShapeError(target, targetPath, stat) {
+  if (target === "workspace" && !stat.isDirectory() && !isWorkspaceFile(targetPath)) {
+    return safeErrorMessage(`The saved workspace path is not a folder or .code-workspace file: ${targetPath}`);
+  }
+
+  if (target === "source" && stat.isDirectory()) {
+    return safeErrorMessage(`The saved source path is a folder, not a transcript file: ${targetPath}`);
+  }
+
+  return "";
 }
 
 function codeCommandError(error) {
-  const details = error?.message || String(error || "Unknown error");
   if (error?.code === "ENOENT") {
     return "Unable to launch VS Code with the code command. Install the VS Code shell command or use the embedded VS Code panel open actions.";
   }
 
+  const details = safeErrorMessage(error, "Unknown error");
   return `Unable to launch VS Code with the code command: ${details}`;
 }
 
@@ -86,12 +103,23 @@ export async function openSessionTargetInVsCode(sessionId, target) {
   }
 
   const targetPath = pathForSessionTarget(session, target);
-  if (!targetPath || !fs.existsSync(targetPath)) {
+  const stat = targetPath ? safeStat(targetPath) : null;
+  if (!targetPath || !stat) {
     return {
       ok: false,
       error: targetMissingMessage(target, targetPath),
       target,
-      path: targetPath || ""
+      path: targetPath ? "[LOCAL_PATH]" : ""
+    };
+  }
+
+  const shapeError = targetShapeError(target, targetPath, stat);
+  if (shapeError) {
+    return {
+      ok: false,
+      error: shapeError,
+      target,
+      path: "[LOCAL_PATH]"
     };
   }
 

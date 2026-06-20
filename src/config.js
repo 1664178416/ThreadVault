@@ -36,6 +36,23 @@ function normalizeHostSetting(value, fallback = DEFAULT_HOST) {
   return fallback;
 }
 
+function expandConfigPath(value, fallbackPath) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return path.resolve(fallbackPath);
+  }
+
+  if (text === "~") {
+    return os.homedir();
+  }
+
+  if (text.startsWith("~/") || text.startsWith(`~${path.sep}`)) {
+    return path.join(os.homedir(), text.slice(2));
+  }
+
+  return path.resolve(APP_ROOT, text);
+}
+
 function listFilesRecursive(rootPath) {
   const files = [];
   for (const entry of fs.readdirSync(rootPath, { withFileTypes: true })) {
@@ -72,14 +89,15 @@ export const APP_NAME = "ThreadVault";
 export const APP_PORT = parsePort(process.env.THREADVAULT_PORT);
 export const APP_HOST = normalizeHostSetting(process.env.THREADVAULT_HOST);
 export const RUNTIME_FINGERPRINT = String(process.env.THREADVAULT_RUNTIME_FINGERPRINT || "").trim() || computeAppFingerprint(APP_ROOT);
-export const DATA_DIR = process.env.THREADVAULT_DATA_DIR || path.join(APP_ROOT, "data");
+export const DATA_DIR = expandConfigPath(process.env.THREADVAULT_DATA_DIR, path.join(APP_ROOT, "data"));
 export const DB_PATH = path.join(DATA_DIR, "threadvault.sqlite");
 export const EXPORT_DIR = path.join(DATA_DIR, "exports");
-export const MEMORY_DIR = process.env.THREADVAULT_MEMORY_DIR || path.join(DATA_DIR, "memory");
+export const MEMORY_DIR = expandConfigPath(process.env.THREADVAULT_MEMORY_DIR, path.join(DATA_DIR, "memory"));
 export const PUBLIC_DIR = path.join(APP_ROOT, "public");
 export const APPDATA = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
 export const VSCODE_GLOBAL_STORAGE = path.join(APPDATA, "Code", "User", "globalStorage");
 export const COPILOT_EMPTY_WINDOW_DIR = path.join(VSCODE_GLOBAL_STORAGE, "emptyWindowChatSessions");
 export const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
+export const CODEX_ARCHIVED_SESSIONS_DIR = path.join(os.homedir(), ".codex", "archived_sessions");
 export const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 export const CLAUDE_HISTORY_FILE = path.join(os.homedir(), ".claude", "history.jsonl");

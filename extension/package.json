@@ -93,12 +93,12 @@
         "threadvault.dataDirectory": {
           "type": "string",
           "default": "",
-          "description": "Optional custom directory for ThreadVault's SQLite database and generated files. Leave empty to use the extension storage default."
+          "description": "Optional custom directory for ThreadVault's SQLite database and generated files. Absolute paths and ~ paths are supported; relative paths resolve from the default storage parent. Leave empty to use the extension storage default."
         },
         "threadvault.memoryDirectory": {
           "type": "string",
           "default": "",
-          "description": "Optional custom directory for Markdown memory notes. Leave empty to use a memory folder inside the data directory."
+          "description": "Optional custom directory for Markdown memory notes. Absolute paths and ~ paths are supported; relative paths resolve from the current data directory. Leave empty to use a memory folder inside the data directory."
         }
       }
     },

@@ -14,7 +14,7 @@ ThreadVault is a local-first library for AI coding conversations. The extension 
 Current indexed sources:
 
 - GitHub Copilot Chat
-- Codex
+- Codex, including source-side archived sessions
 - Claude Code
 
 Inside the dashboard, a session can be in exactly one state: `Regular`, `Favorite`, or `Hidden`. Hidden sessions leave the regular and Favorites views, but ThreadVault does not delete the source history file. Output actions do not change that state: `Export copy` creates a Markdown copy for backup or sharing, `Save note` writes a durable Markdown note to the configured memory directory, and `Copy local link` copies a local-only URL for the selected session.
@@ -39,6 +39,8 @@ ThreadVault contributes these VS Code settings:
 - `threadvault.nodePath`: optional path to a Node.js 24+ executable when `node` is not on `PATH`
 - `threadvault.dataDirectory`: optional custom SQLite/data directory
 - `threadvault.memoryDirectory`: optional custom Markdown memory directory
+
+Directory settings accept absolute paths, `~` paths under your home directory, and relative paths. Relative `threadvault.dataDirectory` values resolve from the default storage parent; relative `threadvault.memoryDirectory` values resolve from the current data directory.
 
 Keep `threadvault.host` on `127.0.0.1` unless you intentionally want to expose the local service outside your machine. Write requests are restricted to local origins plus the explicitly configured bind host. If you bind to `0.0.0.0`, usually keep `threadvault.clientHost` on `127.0.0.1`.
 For IPv6 localhost, use `::1` or `[::1]` in host settings and keep the port in `threadvault.port`.
