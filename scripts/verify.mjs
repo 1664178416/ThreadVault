@@ -1297,6 +1297,42 @@ function runParserErrorRedactionRegression() {
   }
 }
 
+function runFileUtilityRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-fs-"));
+
+  try {
+    runModuleInput("file utility regression failed", `
+      import fs from "node:fs";
+      import path from "node:path";
+      import { sortByModifiedDesc } from "./src/utils/fs.js";
+
+      const first = path.join(${JSON.stringify(tempRoot)}, "first.jsonl");
+      const second = path.join(${JSON.stringify(tempRoot)}, "second.jsonl");
+      const newest = path.join(${JSON.stringify(tempRoot)}, "newest.jsonl");
+      fs.writeFileSync(first, "{}", "utf8");
+      fs.writeFileSync(second, "{}", "utf8");
+      fs.writeFileSync(newest, "{}", "utf8");
+
+      const oldDate = new Date("2026-06-20T01:00:00.000Z");
+      const newDate = new Date("2026-06-20T02:00:00.000Z");
+      fs.utimesSync(first, oldDate, oldDate);
+      fs.utimesSync(second, oldDate, oldDate);
+      fs.utimesSync(newest, newDate, newDate);
+
+      const sorted = sortByModifiedDesc([first, second, newest]);
+      if (sorted[0] !== newest || sorted[1] !== first || sorted[2] !== second) {
+        throw new Error("sortByModifiedDesc should sort descending and preserve input order ties: " + JSON.stringify(sorted));
+      }
+    `);
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-fs-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
 function runCodexArchivedSourceRegression() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-codex-archived-"));
 
@@ -1341,6 +1377,10 @@ function runCodexArchivedSourceRegression() {
     fs.writeFileSync(duplicateArchivedPath, rolloutLines(normalSessionId, "C:/old/project", "archived duplicate should lose"), "utf8");
     fs.writeFileSync(normalPath, rolloutLines(normalSessionId, "C:/workspace/normal", "normal session should win"), "utf8");
     fs.writeFileSync(archivedOnlyPath, rolloutLines(archivedSessionId, "C:/workspace/archived", "archived source should still index"), "utf8");
+    const oldDate = new Date("2026-06-20T01:00:00.000Z");
+    const newDate = new Date("2026-06-20T02:00:00.000Z");
+    fs.utimesSync(normalPath, oldDate, oldDate);
+    fs.utimesSync(duplicateArchivedPath, newDate, newDate);
 
     runModuleInput("codex archived source regression failed", `
       import { scanCodexSessions } from "./src/adapters/codex.js";
@@ -1661,6 +1701,7 @@ runStateAndExportRegression();
 runServerCorsRegression();
 runServerHttpRegression();
 runParserErrorRedactionRegression();
+runFileUtilityRegression();
 runCodexArchivedSourceRegression();
 runSessionFingerprintRegression();
 runOpenActionRedactionRegression();
@@ -2701,6 +2742,8 @@ assertFileContains("src/utils/fs.js", [
   "import { safeErrorMessage }",
   "export function safeStat",
   "export function sortByModifiedDesc",
+  "modifiedAt: safeStat(filePath)?.mtimeMs || 0",
+  "right.modifiedAt - left.modifiedAt || left.index - right.index",
   "safeStat(filePath)?.isFile()",
   "try {",
   "MAX_PARSE_ERROR_SAMPLES",

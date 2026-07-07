@@ -45,11 +45,14 @@ export function safeStat(filePath) {
 }
 
 export function sortByModifiedDesc(filePaths) {
-  return [...filePaths].sort((left, right) => {
-    const leftTime = safeStat(left)?.mtimeMs || 0;
-    const rightTime = safeStat(right)?.mtimeMs || 0;
-    return rightTime - leftTime;
-  });
+  return filePaths
+    .map((filePath, index) => ({
+      filePath,
+      index,
+      modifiedAt: safeStat(filePath)?.mtimeMs || 0
+    }))
+    .sort((left, right) => right.modifiedAt - left.modifiedAt || left.index - right.index)
+    .map((entry) => entry.filePath);
 }
 
 export function listFiles(dirPath) {
