@@ -384,15 +384,16 @@ export function upsertImportedSessions(sessions) {
   };
 
   for (const session of sessions) {
-    db.exec("BEGIN TRANSACTION");
+    let transactionOpen = false;
     try {
       const existingFingerprint = getSessionFingerprint(db, session.id);
       if (existingFingerprint && existingFingerprint === session.fingerprint) {
         stats.skippedSessions += 1;
-        db.exec("COMMIT");
         continue;
       }
 
+      db.exec("BEGIN TRANSACTION");
+      transactionOpen = true;
       upsertSessionRecord(db, session);
       replaceSessionMessages(db, session);
       refreshSearchDocumentWithSession(db, session);
@@ -404,8 +405,11 @@ export function upsertImportedSessions(sessions) {
       }
 
       db.exec("COMMIT");
+      transactionOpen = false;
     } catch (error) {
-      db.exec("ROLLBACK");
+      if (transactionOpen) {
+        db.exec("ROLLBACK");
+      }
       stats.failedSessions += 1;
       if (stats.errors.length < 20) {
         stats.errors.push({

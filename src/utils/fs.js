@@ -107,24 +107,26 @@ export function readJsonLines(filePath) {
   const records = [];
   const errorSamples = [];
   let errorTotal = 0;
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
 
-  fs.readFileSync(filePath, "utf8")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .forEach((line, index) => {
-      try {
-        records.push(JSON.parse(line));
-      } catch (error) {
-        if (errorSamples.length < MAX_PARSE_ERROR_SAMPLES) {
-          errorSamples.push({
-            line: index + 1,
-            error: safeErrorMessage(error, "JSON line could not be parsed.")
-          });
-        }
-        errorTotal += 1;
+  for (const [index, rawLine] of lines.entries()) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    try {
+      records.push(JSON.parse(line));
+    } catch (error) {
+      if (errorSamples.length < MAX_PARSE_ERROR_SAMPLES) {
+        errorSamples.push({
+          line: index + 1,
+          error: safeErrorMessage(error, "JSON line could not be parsed.")
+        });
       }
-    });
+      errorTotal += 1;
+    }
+  }
 
   Object.defineProperty(records, "parseErrors", {
     enumerable: false,

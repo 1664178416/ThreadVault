@@ -562,6 +562,11 @@ function runStateAndExportRegression() {
         throw new Error(\`expected one imported session, got \${stats.importedSessions}\`);
       }
 
+      const skippedStats = upsertImportedSessions([session]);
+      if (skippedStats.skippedSessions !== 1 || skippedStats.importedSessions !== 0 || skippedStats.updatedSessions !== 0) {
+        throw new Error(\`unchanged sessions should be skipped cleanly: \${JSON.stringify(skippedStats)}\`);
+      }
+
       const failedStats = upsertImportedSessions([{
         ...session,
         id: "verify-failed-session",
@@ -1240,10 +1245,13 @@ function runParserErrorRedactionRegression() {
       const unixPathError = "/Users/wyh/private project/session file.jsonl token=ghp_abcdefghijklmnopqrs person@example.com";
       const uncPathError = String.raw\`\\\\fileserver\\team share\\session file.jsonl token=ghp_abcdefghijklmnopqrs person@example.com\`;
       const jsonlPath = path.join(${JSON.stringify(tempRoot)}, "bad.jsonl");
-      fs.writeFileSync(jsonlPath, badLine, "utf8");
+      fs.writeFileSync(jsonlPath, \`\\n\\n\${badLine}\`, "utf8");
 
       const records = readJsonLines(jsonlPath);
       const jsonlErrors = JSON.stringify(records.parseErrors);
+      if (records.parseErrors.samples[0]?.line !== 3) {
+        throw new Error("JSONL parse errors should preserve physical line numbers: " + jsonlErrors);
+      }
       const patchState = applyJsonLineOperations(['{"kind":0,"v":{}}', badLine]) || {};
       const patchErrors = JSON.stringify(patchState.parseErrors || {});
       const summary = parseErrorSummary({
@@ -2253,7 +2261,9 @@ assertFileContains("src/db/repository.js", [
   "FROM messages m",
   "m.content LIKE ?",
   "m.referenced_files_json LIKE ?",
-  "db.exec(\"BEGIN TRANSACTION\")"
+  "let transactionOpen = false",
+  "db.exec(\"BEGIN TRANSACTION\")",
+  "if (transactionOpen)"
 ]);
 
 assertFileContains("src/db/database.js", [
@@ -2753,6 +2763,8 @@ assertFileContains("src/utils/fs.js", [
   "const records = []",
   "const errorSamples = []",
   "let errorTotal = 0",
+  "for (const [index, rawLine] of lines.entries())",
+  "const line = rawLine.trim()",
   "safeErrorMessage(error, \"JSON line could not be parsed.\")",
   "Object.defineProperty(records, \"parseErrors\"",
   "samples: errorSamples"
