@@ -6,6 +6,18 @@ const MAX_TAG_LENGTH = 64;
 const MAX_NOTE_TEXT_LENGTH = 20000;
 const MAX_SOURCE_ID_LENGTH = 128;
 
+const SESSION_ANNOTATION_QUERY = `
+  SELECT
+    session_id AS sessionId,
+    favorite,
+    archived,
+    tags_json AS tagsJson,
+    note_text AS noteText,
+    updated_at AS updatedAt
+  FROM session_annotations
+  WHERE session_id = ?
+`;
+
 function json(value) {
   return JSON.stringify(value ?? {});
 }
@@ -231,18 +243,8 @@ function deserializeAnnotationRow(row) {
   };
 }
 
-function getAnnotationForSession(db, sessionId) {
-  const row = db.prepare(`
-    SELECT
-      session_id AS sessionId,
-      favorite,
-      archived,
-      tags_json AS tagsJson,
-      note_text AS noteText,
-      updated_at AS updatedAt
-    FROM session_annotations
-    WHERE session_id = ?
-  `).get(sessionId);
+function getAnnotationForSession(db, sessionId, statement = null) {
+  const row = (statement || db.prepare(SESSION_ANNOTATION_QUERY)).get(sessionId);
 
   const annotation = deserializeAnnotationRow(row);
   return annotation.sessionId ? annotation : defaultAnnotation(sessionId);
@@ -272,32 +274,57 @@ function buildSearchBody(session, annotation) {
   return parts.join("\n\n").trim();
 }
 
-function upsertSessionRecord(db, session) {
-  db.prepare(`
-    INSERT INTO sessions (
-      id, source_id, source_label, source_session_id, title, summary, workspace_path,
-      workspace_name, created_at, updated_at, status, resume_type, fingerprint,
-      source_path, parse_confidence, metadata_json
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      source_id = excluded.source_id,
-      source_label = excluded.source_label,
-      source_session_id = excluded.source_session_id,
-      title = excluded.title,
-      summary = excluded.summary,
-      workspace_path = excluded.workspace_path,
-      workspace_name = excluded.workspace_name,
-      created_at = excluded.created_at,
-      updated_at = excluded.updated_at,
-      status = excluded.status,
-      resume_type = excluded.resume_type,
-      fingerprint = excluded.fingerprint,
-      source_path = excluded.source_path,
-      parse_confidence = excluded.parse_confidence,
-      metadata_json = excluded.metadata_json
-  `).run(
+function prepareSearchDocumentStatements(db) {
+  return {
+    getAnnotation: db.prepare(SESSION_ANNOTATION_QUERY),
+    deleteSearch: db.prepare(`DELETE FROM session_search WHERE session_id = ?`),
+    insertSearch: db.prepare(`
+      INSERT INTO session_search (
+        session_id, title, summary, workspace_name, body
+      ) VALUES (?, ?, ?, ?, ?)
+    `)
+  };
+}
+
+function prepareImportWriteStatements(db) {
+  return {
+    upsertSession: db.prepare(`
+      INSERT INTO sessions (
+        id, source_id, source_label, source_session_id, title, summary, workspace_path,
+        workspace_name, created_at, updated_at, status, resume_type, fingerprint,
+        source_path, parse_confidence, metadata_json
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        source_id = excluded.source_id,
+        source_label = excluded.source_label,
+        source_session_id = excluded.source_session_id,
+        title = excluded.title,
+        summary = excluded.summary,
+        workspace_path = excluded.workspace_path,
+        workspace_name = excluded.workspace_name,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        status = excluded.status,
+        resume_type = excluded.resume_type,
+        fingerprint = excluded.fingerprint,
+        source_path = excluded.source_path,
+        parse_confidence = excluded.parse_confidence,
+        metadata_json = excluded.metadata_json
+    `),
+    deleteMessages: db.prepare(`DELETE FROM messages WHERE session_id = ?`),
+    insertMessage: db.prepare(`
+      INSERT INTO messages (
+        id, session_id, ordinal, role, content, timestamp, model, referenced_files_json, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    ...prepareSearchDocumentStatements(db)
+  };
+}
+
+function upsertSessionRecord(statement, session) {
+  statement.run(
     session.id,
     session.sourceId,
     session.sourceLabel,
@@ -317,17 +344,11 @@ function upsertSessionRecord(db, session) {
   );
 }
 
-function replaceSessionMessages(db, session) {
-  db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(session.id);
-
-  const insertMessage = db.prepare(`
-    INSERT INTO messages (
-      id, session_id, ordinal, role, content, timestamp, model, referenced_files_json, metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+function replaceSessionMessages(statements, session) {
+  statements.deleteMessages.run(session.id);
 
   for (const message of session.messages) {
-    insertMessage.run(
+    statements.insertMessage.run(
       message.id,
       session.id,
       message.ordinal,
@@ -341,26 +362,17 @@ function replaceSessionMessages(db, session) {
   }
 }
 
-function refreshSearchDocumentWithSession(db, session) {
-  const annotation = getAnnotationForSession(db, session.id);
+function refreshSearchDocumentWithSession(db, session, statements = prepareSearchDocumentStatements(db)) {
+  const annotation = getAnnotationForSession(db, session.id, statements.getAnnotation);
 
-  db.prepare(`DELETE FROM session_search WHERE session_id = ?`).run(session.id);
-  db.prepare(`
-    INSERT INTO session_search (
-      session_id, title, summary, workspace_name, body
-    ) VALUES (?, ?, ?, ?, ?)
-  `).run(
+  statements.deleteSearch.run(session.id);
+  statements.insertSearch.run(
     session.id,
     session.title,
     [session.summary || "", annotation.noteText].filter(Boolean).join("\n\n"),
     [session.workspaceName || "", annotation.tags.join(" ")].filter(Boolean).join(" "),
     buildSearchBody(session, annotation)
   );
-}
-
-function getSessionFingerprint(db, sessionId) {
-  const row = db.prepare(`SELECT fingerprint FROM sessions WHERE id = ?`).get(sessionId);
-  return row?.fingerprint || null;
 }
 
 function sessionExists(db, sessionId) {
@@ -383,22 +395,30 @@ export function upsertImportedSessions(sessions) {
     errors: []
   };
 
+  if (sessions.length === 0) {
+    return stats;
+  }
+
+  const fingerprintStatement = db.prepare(`SELECT fingerprint FROM sessions WHERE id = ?`);
+  let writeStatements = null;
+
   for (const session of sessions) {
     let transactionOpen = false;
     try {
-      const existingFingerprint = getSessionFingerprint(db, session.id);
-      if (existingFingerprint && existingFingerprint === session.fingerprint) {
+      const existing = fingerprintStatement.get(session.id);
+      if (existing && existing.fingerprint === session.fingerprint) {
         stats.skippedSessions += 1;
         continue;
       }
 
+      writeStatements ||= prepareImportWriteStatements(db);
       db.exec("BEGIN TRANSACTION");
       transactionOpen = true;
-      upsertSessionRecord(db, session);
-      replaceSessionMessages(db, session);
-      refreshSearchDocumentWithSession(db, session);
+      upsertSessionRecord(writeStatements.upsertSession, session);
+      replaceSessionMessages(writeStatements, session);
+      refreshSearchDocumentWithSession(db, session, writeStatements);
 
-      if (existingFingerprint) {
+      if (existing) {
         stats.updatedSessions += 1;
       } else {
         stats.importedSessions += 1;
@@ -735,20 +755,15 @@ export function getStats() {
     SELECT
       COUNT(*) AS sessionCount,
       COALESCE((SELECT COUNT(*) FROM messages), 0) AS messageCount,
-      COALESCE((SELECT COUNT(*) FROM sessions s LEFT JOIN session_annotations a ON a.session_id = s.id WHERE COALESCE(a.archived, 0) = 0), 0) AS visibleSessionCount,
-      COALESCE((SELECT COUNT(*) FROM sessions WHERE source_id = 'copilot'), 0) AS copilotSessionCount,
-      COALESCE((SELECT COUNT(*) FROM sessions WHERE source_id = 'codex'), 0) AS codexSessionCount,
-      COALESCE((SELECT COUNT(*) FROM sessions WHERE source_id = 'claude'), 0) AS claudeSessionCount,
-      COALESCE((SELECT COUNT(*) FROM session_annotations a JOIN sessions s ON s.id = a.session_id WHERE a.favorite = 1 AND COALESCE(a.archived, 0) = 0), 0) AS favoriteCount,
-      COALESCE((SELECT COUNT(*) FROM session_annotations a JOIN sessions s ON s.id = a.session_id WHERE a.archived = 1), 0) AS archivedCount
-    FROM sessions
-  `).get();
-
-  const newest = db.prepare(`
-    SELECT COALESCE(updated_at, created_at) AS updatedAt
-    FROM sessions
-    ORDER BY COALESCE(updated_at, created_at) DESC
-    LIMIT 1
+      COALESCE(SUM(CASE WHEN COALESCE(a.archived, 0) = 0 THEN 1 ELSE 0 END), 0) AS visibleSessionCount,
+      COALESCE(SUM(CASE WHEN s.source_id = 'copilot' THEN 1 ELSE 0 END), 0) AS copilotSessionCount,
+      COALESCE(SUM(CASE WHEN s.source_id = 'codex' THEN 1 ELSE 0 END), 0) AS codexSessionCount,
+      COALESCE(SUM(CASE WHEN s.source_id = 'claude' THEN 1 ELSE 0 END), 0) AS claudeSessionCount,
+      COALESCE(SUM(CASE WHEN a.favorite = 1 AND COALESCE(a.archived, 0) = 0 THEN 1 ELSE 0 END), 0) AS favoriteCount,
+      COALESCE(SUM(CASE WHEN a.archived = 1 THEN 1 ELSE 0 END), 0) AS archivedCount,
+      MAX(COALESCE(s.updated_at, s.created_at)) AS updatedAt
+    FROM sessions s
+    LEFT JOIN session_annotations a ON a.session_id = s.id
   `).get();
 
   return {
@@ -760,7 +775,7 @@ export function getStats() {
     claudeSessionCount: counts.claudeSessionCount,
     favoriteCount: counts.favoriteCount,
     archivedCount: counts.archivedCount,
-    lastIndexedAt: newest?.updatedAt || null
+    lastIndexedAt: counts.updatedAt || null
   };
 }
 

@@ -1515,6 +1515,151 @@ function runSessionFingerprintRegression() {
   }
 }
 
+function runRepositoryEfficiencyRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-repository-efficiency-"));
+
+  try {
+    runModuleInput("repository efficiency regression failed", `
+      import { getDatabase } from "./src/db/database.js";
+      import { getStats, updateSessionAnnotation, upsertImportedSessions } from "./src/db/repository.js";
+
+      function session(id, sourceId, updatedAt) {
+        return {
+          id,
+          sourceId,
+          sourceLabel: sourceId,
+          sourceSessionId: id + "-source",
+          title: id + " title",
+          summary: id + " summary",
+          workspacePath: "C:/workspace/" + id,
+          workspaceName: id,
+          createdAt: "2026-06-10T01:00:00.000Z",
+          updatedAt,
+          status: "ready",
+          resumeType: "thread",
+          fingerprint: id + "-v1",
+          sourcePath: "C:/history/" + id + ".jsonl",
+          parseConfidence: 1,
+          metadata: {},
+          messages: [0, 1].map((ordinal) => ({
+            id: id + "-message-" + ordinal + "-v1",
+            ordinal,
+            role: ordinal === 0 ? "user" : "assistant",
+            content: id + " content " + ordinal,
+            timestamp: updatedAt,
+            model: ordinal === 0 ? null : "test-model",
+            referencedFiles: [],
+            metadata: {}
+          }))
+        };
+      }
+
+      const emptyStats = getStats();
+      if (emptyStats.sessionCount !== 0 || emptyStats.messageCount !== 0 || emptyStats.lastIndexedAt !== null) {
+        throw new Error("empty repository stats should stay zeroed: " + JSON.stringify(emptyStats));
+      }
+
+      const sessions = [
+        session("efficiency-codex", "codex", "2026-06-10T03:00:00.000Z"),
+        session("efficiency-copilot", "copilot", "2026-06-10T02:00:00.000Z"),
+        session("efficiency-claude", "claude", "2026-06-10T04:00:00.000Z")
+      ];
+      const db = getDatabase();
+      const originalPrepare = db.prepare.bind(db);
+      let prepareCount = 0;
+      db.prepare = (...args) => {
+        prepareCount += 1;
+        return originalPrepare(...args);
+      };
+
+      try {
+        const empty = upsertImportedSessions([]);
+        if (empty.scannedSessions !== 0 || empty.failedSessions !== 0 || prepareCount !== 0) {
+          throw new Error("empty session batches should not prepare statements: " + JSON.stringify({ empty, prepareCount }));
+        }
+
+        const initial = upsertImportedSessions(sessions);
+        if (initial.importedSessions !== 3 || initial.failedSessions !== 0 || prepareCount !== 7) {
+          throw new Error("new session batches should reuse seven prepared statements: " + JSON.stringify({ initial, prepareCount }));
+        }
+
+        prepareCount = 0;
+        const unchanged = upsertImportedSessions(sessions);
+        if (unchanged.skippedSessions !== 3 || unchanged.failedSessions !== 0 || prepareCount !== 1) {
+          throw new Error("unchanged batches should prepare only the fingerprint query: " + JSON.stringify({ unchanged, prepareCount }));
+        }
+
+        const changedCopilot = {
+          ...sessions[1],
+          fingerprint: "efficiency-copilot-v2",
+          messages: sessions[1].messages.map((message) => ({
+            ...message,
+            id: message.id.replace("-v1", "-v2"),
+            content: message.content + " changed"
+          }))
+        };
+        prepareCount = 0;
+        const mixed = upsertImportedSessions([sessions[0], changedCopilot, sessions[2]]);
+        if (mixed.updatedSessions !== 1 || mixed.skippedSessions !== 2 || mixed.failedSessions !== 0 || prepareCount !== 7) {
+          throw new Error("mixed batches should reuse write statements after the first change: " + JSON.stringify({ mixed, prepareCount }));
+        }
+
+        const conflictingSession = {
+          ...sessions[0],
+          id: "efficiency-conflict",
+          sourceSessionId: "efficiency-conflict-source",
+          messages: sessions[0].messages.map((message) => ({
+            ...message,
+            id: "conflict-" + message.id
+          }))
+        };
+        const changedClaude = {
+          ...sessions[2],
+          fingerprint: "efficiency-claude-v2",
+          messages: sessions[2].messages.map((message) => ({
+            ...message,
+            id: message.id.replace("-v1", "-v2"),
+            content: message.content + " changed"
+          }))
+        };
+        prepareCount = 0;
+        const recovered = upsertImportedSessions([conflictingSession, changedClaude]);
+        if (recovered.failedSessions !== 1 || recovered.updatedSessions !== 1 || recovered.importedSessions !== 0 || prepareCount !== 7) {
+          throw new Error("prepared statements should remain reusable after a session rollback: " + JSON.stringify({ recovered, prepareCount }));
+        }
+      } finally {
+        db.prepare = originalPrepare;
+      }
+
+      updateSessionAnnotation(sessions[0].id, { favorite: true });
+      updateSessionAnnotation(sessions[1].id, { archived: true });
+      const stats = getStats();
+      const expected = {
+        sessionCount: 3,
+        messageCount: 6,
+        visibleSessionCount: 2,
+        copilotSessionCount: 1,
+        codexSessionCount: 1,
+        claudeSessionCount: 1,
+        favoriteCount: 1,
+        archivedCount: 1,
+        lastIndexedAt: "2026-06-10T04:00:00.000Z"
+      };
+      if (JSON.stringify(stats) !== JSON.stringify(expected)) {
+        throw new Error("aggregated repository stats are incorrect: " + JSON.stringify({ stats, expected }));
+      }
+    `, {
+      THREADVAULT_DATA_DIR: tempRoot
+    });
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-repository-efficiency-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
 function runOpenActionRedactionRegression() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-open-action-"));
 
@@ -1712,6 +1857,7 @@ runParserErrorRedactionRegression();
 runFileUtilityRegression();
 runCodexArchivedSourceRegression();
 runSessionFingerprintRegression();
+runRepositoryEfficiencyRegression();
 runOpenActionRedactionRegression();
 assertI18nIntegrity();
 
