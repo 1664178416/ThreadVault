@@ -21,3 +21,5 @@
 - Clarified that `Export copy`, `Save note`, and `Copy local link` are output actions rather than session states
 - Aligned Marketplace gallery banner metadata with the current ThreadVault UI direction
 - Added bundled runtime fingerprints so same-version local VSIX installs refresh the copied extension app when bundled source changes
+- Added persistent incremental source scanning so unchanged transcript files bypass JSON parsing and message reconstruction
+- Batched changed-session imports into one SQLite transaction and bounded multi-row message inserts while retaining per-session savepoint rollback

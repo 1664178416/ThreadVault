@@ -32,6 +32,20 @@ function createSchema(db) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_fingerprint ON sessions(fingerprint);
     CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at);
 
+    CREATE TABLE IF NOT EXISTS source_scan_cache (
+      source_path TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      modified_at_ms REAL NOT NULL,
+      changed_at_ms REAL NOT NULL,
+      parser_version TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_source_scan_cache_session_id ON source_scan_cache(session_id);
+
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,

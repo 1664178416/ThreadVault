@@ -1312,7 +1312,7 @@ function runFileUtilityRegression() {
     runModuleInput("file utility regression failed", `
       import fs from "node:fs";
       import path from "node:path";
-      import { sortByModifiedDesc } from "./src/utils/fs.js";
+      import { fileEntriesByModifiedDesc, sortByModifiedDesc } from "./src/utils/fs.js";
 
       const first = path.join(${JSON.stringify(tempRoot)}, "first.jsonl");
       const second = path.join(${JSON.stringify(tempRoot)}, "second.jsonl");
@@ -1326,6 +1326,22 @@ function runFileUtilityRegression() {
       fs.utimesSync(first, oldDate, oldDate);
       fs.utimesSync(second, oldDate, oldDate);
       fs.utimesSync(newest, newDate, newDate);
+
+      const originalStatSync = fs.statSync;
+      let statCount = 0;
+      fs.statSync = (...args) => {
+        statCount += 1;
+        return originalStatSync.call(fs, ...args);
+      };
+      let entries;
+      try {
+        entries = fileEntriesByModifiedDesc([first, second, newest]);
+      } finally {
+        fs.statSync = originalStatSync;
+      }
+      if (statCount !== 3 || entries[0]?.filePath !== newest || entries[0]?.size !== 2 || !Number.isFinite(entries[0]?.changedAtMs)) {
+        throw new Error("file entries should retain one stat signature per file: " + JSON.stringify({ statCount, entries }));
+      }
 
       const sorted = sortByModifiedDesc([first, second, newest]);
       if (sorted[0] !== newest || sorted[1] !== first || sorted[2] !== second) {
@@ -1420,13 +1436,135 @@ function runCodexArchivedSourceRegression() {
   }
 }
 
+function runIncrementalSourceCacheRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-source-cache-"));
+
+  try {
+    const sessionId = "019ec001-0000-7000-8000-000000000010";
+    const sessionDir = path.join(tempRoot, ".codex", "sessions", "2026", "07", "26");
+    const sourcePath = path.join(sessionDir, `rollout-2026-07-26T09-00-00-${sessionId}.jsonl`);
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(sourcePath, [
+      JSON.stringify({
+        timestamp: "2026-07-26T01:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: sessionId,
+          cwd: "C:/workspace/cache-regression",
+          timestamp: "2026-07-26T01:00:00.000Z",
+          model_provider: "openai"
+        }
+      }),
+      JSON.stringify({
+        timestamp: "2026-07-26T01:01:00.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "source cache first message" }]
+        }
+      })
+    ].join("\n"), "utf8");
+
+    runModuleInput("incremental source cache regression failed", `
+      import fs from "node:fs";
+      import path from "node:path";
+      import { scanCodexSessions } from "./src/adapters/codex.js";
+      import { getSessionDetail, getSourceScanCache } from "./src/db/repository.js";
+      import { runFullScan } from "./src/services/indexer.js";
+
+      const sourcePath = path.resolve(${JSON.stringify(sourcePath)});
+      const originalReadFileSync = fs.readFileSync;
+      let sourceReads = 0;
+      fs.readFileSync = (candidatePath, ...args) => {
+        if (path.resolve(String(candidatePath)) === sourcePath) {
+          sourceReads += 1;
+        }
+        return originalReadFileSync.call(fs, candidatePath, ...args);
+      };
+
+      function codexStats(result) {
+        return result.sourceStats.find((source) => source.sourceId === "codex");
+      }
+
+      try {
+        const first = runFullScan();
+        if (first.importedSessions !== 1 || first.cachedSessions !== 0 || first.failedSessions !== 0 || sourceReads !== 1) {
+          throw new Error("first scan should parse and import the source file: " + JSON.stringify({ first, sourceReads }));
+        }
+        if (codexStats(first)?.parsedCount !== 1 || codexStats(first)?.cachedCount !== 0) {
+          throw new Error("first scan source stats are incorrect: " + JSON.stringify(codexStats(first)));
+        }
+
+        sourceReads = 0;
+        const second = runFullScan();
+        if (second.cachedSessions !== 1 || second.skippedSessions !== 1 || second.failedSessions !== 0 || sourceReads !== 0) {
+          throw new Error("second scan should skip source reads through the cache: " + JSON.stringify({ second, sourceReads }));
+        }
+        if (codexStats(second)?.parsedCount !== 0 || codexStats(second)?.cachedCount !== 1) {
+          throw new Error("cached scan source stats are incorrect: " + JSON.stringify(codexStats(second)));
+        }
+
+        sourceReads = 0;
+        const invalidated = scanCodexSessions({
+          parserVersion: "cache-regression-v2",
+          sourceCache: getSourceScanCache()
+        });
+        if (invalidated.length !== 1 || invalidated[0].scanCacheHit || sourceReads !== 1) {
+          throw new Error("parser version changes should invalidate cached files: " + JSON.stringify({ invalidated, sourceReads }));
+        }
+
+        fs.appendFileSync(sourcePath, "\\n" + JSON.stringify({
+          timestamp: "2026-07-26T01:02:00.000Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "source cache changed message" }]
+          }
+        }), "utf8");
+
+        sourceReads = 0;
+        const changed = runFullScan();
+        const detail = getSessionDetail("codex:${sessionId}");
+        if (changed.updatedSessions !== 1 || changed.cachedSessions !== 0 || changed.failedSessions !== 0 || sourceReads !== 1) {
+          throw new Error("changed files should be reparsed and updated: " + JSON.stringify({ changed, sourceReads }));
+        }
+        if (detail?.messages.length !== 2 || !detail.messages[1]?.content.includes("source cache changed message")) {
+          throw new Error("changed source content was not persisted: " + JSON.stringify(detail));
+        }
+
+        sourceReads = 0;
+        const stableAgain = runFullScan();
+        if (stableAgain.cachedSessions !== 1 || stableAgain.failedSessions !== 0 || sourceReads !== 0) {
+          throw new Error("updated cache should skip the next stable scan: " + JSON.stringify({ stableAgain, sourceReads }));
+        }
+      } finally {
+        fs.readFileSync = originalReadFileSync;
+      }
+    `, {
+      APPDATA: path.join(tempRoot, "AppData", "Roaming"),
+      USERPROFILE: tempRoot,
+      HOME: tempRoot,
+      THREADVAULT_DATA_DIR: path.join(tempRoot, "data"),
+      THREADVAULT_RUNTIME_FINGERPRINT: "cache-regression-v1"
+    });
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-source-cache-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
 function runSessionFingerprintRegression() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-fingerprint-"));
 
   try {
     runModuleInput("session fingerprint regression failed", `
       import { getSessionDetail, upsertImportedSessions } from "./src/db/repository.js";
-      import { hashSessionMessages } from "./src/utils/text.js";
+      import { hashNormalizedSession, hashSessionMessages } from "./src/utils/text.js";
 
       function messages(middleContent, middleModel = "model-a") {
         return [
@@ -1492,6 +1630,18 @@ function runSessionFingerprintRegression() {
       if (initial.fingerprint === changedMiddle.fingerprint || changedMiddle.fingerprint === changedModel.fingerprint) {
         throw new Error("message fingerprints should change for middle content and model changes");
       }
+      const changedMessageMetadata = messages("middle before", "model-a");
+      changedMessageMetadata[1].metadata = { hiddenByDefault: true };
+      if (initial.fingerprint === hashSessionMessages(changedMessageMetadata)) {
+        throw new Error("message fingerprints should include message metadata");
+      }
+      if (
+        hashNormalizedSession(initial) === hashNormalizedSession({ ...initial, sourcePath: "C:/history/moved-fingerprint.jsonl" }) ||
+        hashNormalizedSession(initial) === hashNormalizedSession({ ...initial, status: "pending_edits" }) ||
+        hashNormalizedSession(initial) === hashNormalizedSession({ ...initial, metadata: { sourceArchived: true } })
+      ) {
+        throw new Error("normalized session fingerprints should include source paths, status, and metadata");
+      }
 
       const firstStats = upsertImportedSessions([initial]);
       const secondStats = upsertImportedSessions([changedMiddle]);
@@ -1521,9 +1671,11 @@ function runRepositoryEfficiencyRegression() {
   try {
     runModuleInput("repository efficiency regression failed", `
       import { getDatabase } from "./src/db/database.js";
-      import { getStats, updateSessionAnnotation, upsertImportedSessions } from "./src/db/repository.js";
+      import { getSourceScanCache, getStats, updateSessionAnnotation, upsertImportedSessions } from "./src/db/repository.js";
+      import { fileCacheKey } from "./src/utils/fs.js";
 
       function session(id, sourceId, updatedAt) {
+        const messageCount = id === "efficiency-codex" ? 205 : 2;
         return {
           id,
           sourceId,
@@ -1541,7 +1693,7 @@ function runRepositoryEfficiencyRegression() {
           sourcePath: "C:/history/" + id + ".jsonl",
           parseConfidence: 1,
           metadata: {},
-          messages: [0, 1].map((ordinal) => ({
+          messages: Array.from({ length: messageCount }, (_, ordinal) => ({
             id: id + "-message-" + ordinal + "-v1",
             ordinal,
             role: ordinal === 0 ? "user" : "assistant",
@@ -1566,27 +1718,71 @@ function runRepositoryEfficiencyRegression() {
       ];
       const db = getDatabase();
       const originalPrepare = db.prepare.bind(db);
+      const originalExec = db.exec.bind(db);
       let prepareCount = 0;
+      let transactionCounts = {};
+      const resetTransactionCounts = () => {
+        transactionCounts = { begin: 0, commit: 0, rollbackTo: 0 };
+      };
       db.prepare = (...args) => {
         prepareCount += 1;
         return originalPrepare(...args);
       };
+      db.exec = (sql) => {
+        const normalized = String(sql || "").trim().toUpperCase();
+        if (normalized === "BEGIN TRANSACTION") {
+          transactionCounts.begin += 1;
+        } else if (normalized === "COMMIT") {
+          transactionCounts.commit += 1;
+        } else if (normalized.startsWith("ROLLBACK TO SAVEPOINT")) {
+          transactionCounts.rollbackTo += 1;
+        }
+        return originalExec(sql);
+      };
 
       try {
+        resetTransactionCounts();
         const empty = upsertImportedSessions([]);
-        if (empty.scannedSessions !== 0 || empty.failedSessions !== 0 || prepareCount !== 0) {
-          throw new Error("empty session batches should not prepare statements: " + JSON.stringify({ empty, prepareCount }));
+        if (empty.scannedSessions !== 0 || empty.failedSessions !== 0 || prepareCount !== 0 || transactionCounts.begin !== 0) {
+          throw new Error("empty session batches should not prepare statements or transactions: " + JSON.stringify({ empty, prepareCount, transactionCounts }));
         }
 
+        resetTransactionCounts();
         const initial = upsertImportedSessions(sessions);
-        if (initial.importedSessions !== 3 || initial.failedSessions !== 0 || prepareCount !== 7) {
-          throw new Error("new session batches should reuse seven prepared statements: " + JSON.stringify({ initial, prepareCount }));
+        if (initial.importedSessions !== 3 || initial.failedSessions !== 0 || prepareCount !== 9 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1) {
+          throw new Error("new session batches should reuse statements and one transaction: " + JSON.stringify({ initial, prepareCount, transactionCounts }));
         }
 
         prepareCount = 0;
+        resetTransactionCounts();
         const unchanged = upsertImportedSessions(sessions);
-        if (unchanged.skippedSessions !== 3 || unchanged.failedSessions !== 0 || prepareCount !== 1) {
-          throw new Error("unchanged batches should prepare only the fingerprint query: " + JSON.stringify({ unchanged, prepareCount }));
+        if (unchanged.skippedSessions !== 3 || unchanged.failedSessions !== 0 || prepareCount !== 1 || transactionCounts.begin !== 0) {
+          throw new Error("unchanged batches should prepare only the fingerprint query: " + JSON.stringify({ unchanged, prepareCount, transactionCounts }));
+        }
+
+        const sourceFile = {
+          size: 1024,
+          modifiedAtMs: 1000.25,
+          changedAtMs: 1001.5,
+          parserVersion: "repository-cache-v1"
+        };
+        prepareCount = 0;
+        resetTransactionCounts();
+        const backfilled = upsertImportedSessions([{ ...sessions[0], sourceFile }]);
+        if (backfilled.skippedSessions !== 1 || backfilled.failedSessions !== 0 || prepareCount !== 2 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1) {
+          throw new Error("unchanged sessions should backfill source cache without rewriting messages: " + JSON.stringify({ backfilled, prepareCount, transactionCounts }));
+        }
+
+        prepareCount = 0;
+        resetTransactionCounts();
+        const cached = upsertImportedSessions([{
+          id: sessions[0].id,
+          sourceId: sessions[0].sourceId,
+          sourcePath: sessions[0].sourcePath,
+          scanCacheHit: true
+        }]);
+        if (cached.cachedSessions !== 1 || cached.skippedSessions !== 1 || cached.failedSessions !== 0 || prepareCount !== 0 || transactionCounts.begin !== 0) {
+          throw new Error("source cache hits should skip all repository statements: " + JSON.stringify({ cached, prepareCount, transactionCounts }));
         }
 
         const changedCopilot = {
@@ -1599,15 +1795,18 @@ function runRepositoryEfficiencyRegression() {
           }))
         };
         prepareCount = 0;
+        resetTransactionCounts();
         const mixed = upsertImportedSessions([sessions[0], changedCopilot, sessions[2]]);
-        if (mixed.updatedSessions !== 1 || mixed.skippedSessions !== 2 || mixed.failedSessions !== 0 || prepareCount !== 7) {
-          throw new Error("mixed batches should reuse write statements after the first change: " + JSON.stringify({ mixed, prepareCount }));
+        if (mixed.updatedSessions !== 1 || mixed.skippedSessions !== 2 || mixed.failedSessions !== 0 || prepareCount !== 7 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1) {
+          throw new Error("mixed batches should reuse write statements after the first change: " + JSON.stringify({ mixed, prepareCount, transactionCounts }));
         }
 
         const conflictingSession = {
           ...sessions[0],
           id: "efficiency-conflict",
           sourceSessionId: "efficiency-conflict-source",
+          sourcePath: "C:/history/efficiency-conflict.jsonl",
+          sourceFile,
           messages: sessions[0].messages.map((message) => ({
             ...message,
             id: "conflict-" + message.id
@@ -1623,12 +1822,19 @@ function runRepositoryEfficiencyRegression() {
           }))
         };
         prepareCount = 0;
+        resetTransactionCounts();
         const recovered = upsertImportedSessions([conflictingSession, changedClaude]);
-        if (recovered.failedSessions !== 1 || recovered.updatedSessions !== 1 || recovered.importedSessions !== 0 || prepareCount !== 7) {
-          throw new Error("prepared statements should remain reusable after a session rollback: " + JSON.stringify({ recovered, prepareCount }));
+        if (recovered.failedSessions !== 1 || recovered.updatedSessions !== 1 || recovered.importedSessions !== 0 || prepareCount !== 7 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1 || transactionCounts.rollbackTo !== 1) {
+          throw new Error("prepared statements should remain reusable after a session savepoint rollback: " + JSON.stringify({ recovered, prepareCount, transactionCounts }));
         }
       } finally {
         db.prepare = originalPrepare;
+        db.exec = originalExec;
+      }
+
+      const sourceCache = getSourceScanCache();
+      if (!sourceCache.has(fileCacheKey(sessions[0].sourcePath)) || sourceCache.has(fileCacheKey("C:/history/efficiency-conflict.jsonl"))) {
+        throw new Error("source cache should persist successful backfills and exclude rolled-back imports");
       }
 
       updateSessionAnnotation(sessions[0].id, { favorite: true });
@@ -1636,7 +1842,7 @@ function runRepositoryEfficiencyRegression() {
       const stats = getStats();
       const expected = {
         sessionCount: 3,
-        messageCount: 6,
+        messageCount: 209,
         visibleSessionCount: 2,
         copilotSessionCount: 1,
         codexSessionCount: 1,
@@ -1856,6 +2062,7 @@ runServerHttpRegression();
 runParserErrorRedactionRegression();
 runFileUtilityRegression();
 runCodexArchivedSourceRegression();
+runIncrementalSourceCacheRegression();
 runSessionFingerprintRegression();
 runRepositoryEfficiencyRegression();
 runOpenActionRedactionRegression();
@@ -2407,8 +2614,13 @@ assertFileContains("src/db/repository.js", [
   "FROM messages m",
   "m.content LIKE ?",
   "m.referenced_files_json LIKE ?",
+  "const MESSAGE_INSERT_BATCH_SIZE = 100",
+  "insertMessageBatches: new Map()",
+  "statement.run(...parameters)",
   "let transactionOpen = false",
   "db.exec(\"BEGIN TRANSACTION\")",
+  "SAVEPOINT threadvault_session_import",
+  "ROLLBACK TO SAVEPOINT threadvault_session_import",
   "if (transactionOpen)"
 ]);
 
@@ -2617,6 +2829,7 @@ assertFileExcludes("src/server.js", [
 
 assertFileContains("src/utils/text.js", [
   "export function hashSessionMessages",
+  "export function hashNormalizedSession",
   "export function safeErrorMessage",
   "export function redactLocalPath",
   "function redactLocalPaths",
@@ -2715,6 +2928,7 @@ assertFileContains("SECURITY.md", [
 
 assertFileContains("README.md", [
   "ThreadVault does not upload transcripts, source paths, exports, memory notes, or the SQLite archive.",
+  "keeps a local source-file signature cache in SQLite",
   "Markdown exports and memory notes include the ThreadVault session id plus per-message turn numbers and message ids",
   "Custom `THREADVAULT_DATA_DIR` and `THREADVAULT_MEMORY_DIR` values may be absolute paths, paths relative to the app root, or `~` paths under your home directory.",
   "The local HTTP API is intended for ThreadVault itself, VS Code, and browser pages opened from `localhost`, `127.0.0.1`, or `::1`.",
@@ -2739,7 +2953,9 @@ assertFileContains("docs/technical-design.md", [
   "The browser API client accepts JSON object responses only",
   "Open actions validate saved target shape before launching VS Code",
   "Export and memory filenames are sanitized, compacted",
-  "frontend response parsing guardrails"
+  "frontend response parsing guardrails",
+  "per-session savepoint",
+  "runtime fingerprint change invalidates cached files"
 ]);
 
 assertFileContains("docs/tasks-mvp.md", [
@@ -2758,7 +2974,9 @@ assertFileContains("docs/schema.md", [
   "source_label TEXT NOT NULL",
   "CREATE TABLE IF NOT EXISTS session_annotations",
   "favorite` and `archived` are mutually exclusive",
-  "CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5"
+  "CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5",
+  "CREATE TABLE IF NOT EXISTS source_scan_cache",
+  "bounded multi-row inserts"
 ]);
 
 assertFileContains("docs/implementation-plan.md", [
@@ -2886,21 +3104,28 @@ assertFileExcludes("src/services/actions.js", [
 assertFileContains("src/services/indexer.js", [
   "function summarizeSourceErrors",
   "failedSources",
-  "sourceErrors: sourceErrors.slice(0, 20)"
+  "sourceErrors: sourceErrors.slice(0, 20)",
+  "getSourceScanCache()",
+  "parserVersion: RUNTIME_FINGERPRINT"
 ]);
 
 assertFileContains("src/adapters/index.js", [
   "import { safeErrorMessage }",
-  "safeErrorMessage(error, \"Source scan failed.\")"
+  "safeErrorMessage(error, \"Source scan failed.\")",
+  "cachedCount",
+  "parsedCount"
 ]);
 
 assertFileContains("src/utils/fs.js", [
   "import { safeErrorMessage }",
   "export function safeStat",
+  "export function fileCacheKey",
+  "export function fileEntriesByModifiedDesc",
   "export function sortByModifiedDesc",
-  "modifiedAt: safeStat(filePath)?.mtimeMs || 0",
-  "right.modifiedAt - left.modifiedAt || left.index - right.index",
-  "safeStat(filePath)?.isFile()",
+  "stat: safeStat(filePath)",
+  "modifiedAtMs: stat?.mtimeMs ?? null",
+  "changedAtMs: stat?.ctimeMs ?? null",
+  "readdirSync(dirPath, { withFileTypes: true })",
   "try {",
   "MAX_PARSE_ERROR_SAMPLES",
   "export function parseErrorSummary",
@@ -2929,17 +3154,41 @@ assertFileContains("src/utils/jsonPatch.js", [
 
 for (const relativePath of ["src/adapters/copilot.js", "src/adapters/codex.js", "src/adapters/claude.js"]) {
   assertFileContains(relativePath, [
-    "hashSessionMessages",
+    "hashNormalizedSession",
     "safeErrorMessage",
     "const parseError = safeErrorMessage(error, \"Session file could not be parsed.\")",
-    "hashSessionMessages(messages)",
+    "session.fingerprint = hashNormalizedSession(session)",
     "summary: parseError",
     "error: parseError",
     "parseErrorSummary",
     "parseErrors",
-    "sortByModifiedDesc"
+    "fileEntriesByModifiedDesc",
+    "cachedSessionForFile",
+    "sourceFileSignature"
   ]);
 }
+
+assertFileContains("src/adapters/cache.js", [
+  "export function sourceFileSignature",
+  "export function cachedSessionForFile",
+  "cached.parserVersion !== sourceFile.parserVersion",
+  "scanCacheHit: true"
+]);
+
+assertFileContains("src/db/database.js", [
+  "CREATE TABLE IF NOT EXISTS source_scan_cache",
+  "changed_at_ms REAL NOT NULL",
+  "parser_version TEXT NOT NULL",
+  "idx_source_scan_cache_session_id"
+]);
+
+assertFileContains("src/db/repository.js", [
+  "function sourceFileCacheRecord",
+  "function upsertSourceFileCache",
+  "session?.scanCacheHit === true",
+  "stats.cachedSessions += 1",
+  "export function getSourceScanCache"
+]);
 
 assertFileContains("src/adapters/codex.js", [
   "CODEX_ARCHIVED_SESSIONS_DIR",

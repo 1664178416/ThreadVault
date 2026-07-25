@@ -45,6 +45,8 @@ ThreadVault scans on startup. To scan manually from the command line:
 npm run scan
 ```
 
+After the first successful scan, ThreadVault keeps a local source-file signature cache in SQLite. Later scans skip reading and parsing unchanged transcript files. File size, modification/change time, and the running app fingerprint invalidate the cache automatically when history or parser code changes.
+
 ## First Use
 
 1. Start ThreadVault with `npm start`.

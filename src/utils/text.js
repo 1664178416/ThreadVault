@@ -11,15 +11,38 @@ export function hashSessionMessages(messages = []) {
   const separator = "\u001f";
   const recordSeparator = "\u001e";
   const payload = (Array.isArray(messages) ? messages : []).map((message) => [
+    message?.id || "",
     message?.ordinal ?? "",
     message?.role || "",
     message?.content || "",
     message?.timestamp || "",
     message?.model || "",
-    ...(Array.isArray(message?.referencedFiles) ? message.referencedFiles : [])
+    JSON.stringify(Array.isArray(message?.referencedFiles) ? message.referencedFiles : []),
+    JSON.stringify(message?.metadata ?? {})
   ].join(separator)).join(recordSeparator);
 
   return hashText(payload);
+}
+
+export function hashNormalizedSession(session = {}) {
+  return hashText(JSON.stringify({
+    id: session.id || "",
+    sourceId: session.sourceId || "",
+    sourceLabel: session.sourceLabel || "",
+    sourceSessionId: session.sourceSessionId || "",
+    title: session.title || "",
+    summary: session.summary || "",
+    workspacePath: session.workspacePath || "",
+    workspaceName: session.workspaceName || "",
+    createdAt: session.createdAt || "",
+    updatedAt: session.updatedAt || "",
+    status: session.status || "",
+    resumeType: session.resumeType || "",
+    sourcePath: session.sourcePath || "",
+    parseConfidence: session.parseConfidence ?? null,
+    metadata: session.metadata ?? {},
+    messages: hashSessionMessages(session.messages)
+  }));
 }
 
 export function snippet(value, maxLength = 120) {

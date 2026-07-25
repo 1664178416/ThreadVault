@@ -1,10 +1,13 @@
 import { getDatabase } from "./database.js";
 import { redactLocalPath, safeErrorMessage, snippet } from "../utils/text.js";
+import { fileCacheKey } from "../utils/fs.js";
 
 const MAX_TAGS = 20;
 const MAX_TAG_LENGTH = 64;
 const MAX_NOTE_TEXT_LENGTH = 20000;
 const MAX_SOURCE_ID_LENGTH = 128;
+const MAX_PARSER_VERSION_LENGTH = 256;
+const MESSAGE_INSERT_BATCH_SIZE = 100;
 
 const SESSION_ANNOTATION_QUERY = `
   SELECT
@@ -274,6 +277,68 @@ function buildSearchBody(session, annotation) {
   return parts.join("\n\n").trim();
 }
 
+function sourceFileCacheRecord(session) {
+  const sourceFile = session?.sourceFile;
+  const parserVersion = String(sourceFile?.parserVersion || "").trim();
+  if (
+    typeof session?.sourcePath !== "string" ||
+    !session.sourcePath ||
+    typeof session?.sourceId !== "string" ||
+    !session.sourceId ||
+    typeof session?.id !== "string" ||
+    !session.id ||
+    !Number.isSafeInteger(sourceFile?.size) ||
+    sourceFile.size < 0 ||
+    !Number.isFinite(sourceFile?.modifiedAtMs) ||
+    !Number.isFinite(sourceFile?.changedAtMs) ||
+    !parserVersion ||
+    parserVersion.length > MAX_PARSER_VERSION_LENGTH ||
+    /[\u0000-\u001f\u007f]/u.test(parserVersion)
+  ) {
+    return null;
+  }
+
+  return {
+    sourcePath: session.sourcePath,
+    sourceId: session.sourceId,
+    sessionId: session.id,
+    fileSize: sourceFile.size,
+    modifiedAtMs: sourceFile.modifiedAtMs,
+    changedAtMs: sourceFile.changedAtMs,
+    parserVersion
+  };
+}
+
+function prepareSourceFileCacheStatement(db) {
+  return db.prepare(`
+    INSERT INTO source_scan_cache (
+      source_path, source_id, session_id, file_size, modified_at_ms,
+      changed_at_ms, parser_version, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(source_path) DO UPDATE SET
+      source_id = excluded.source_id,
+      session_id = excluded.session_id,
+      file_size = excluded.file_size,
+      modified_at_ms = excluded.modified_at_ms,
+      changed_at_ms = excluded.changed_at_ms,
+      parser_version = excluded.parser_version,
+      updated_at = excluded.updated_at
+  `);
+}
+
+function upsertSourceFileCache(statement, record) {
+  statement.run(
+    record.sourcePath,
+    record.sourceId,
+    record.sessionId,
+    record.fileSize,
+    record.modifiedAtMs,
+    record.changedAtMs,
+    record.parserVersion,
+    nowIso()
+  );
+}
+
 function prepareSearchDocumentStatements(db) {
   return {
     getAnnotation: db.prepare(SESSION_ANNOTATION_QUERY),
@@ -288,6 +353,7 @@ function prepareSearchDocumentStatements(db) {
 
 function prepareImportWriteStatements(db) {
   return {
+    db,
     upsertSession: db.prepare(`
       INSERT INTO sessions (
         id, source_id, source_label, source_session_id, title, summary, workspace_path,
@@ -314,11 +380,7 @@ function prepareImportWriteStatements(db) {
         metadata_json = excluded.metadata_json
     `),
     deleteMessages: db.prepare(`DELETE FROM messages WHERE session_id = ?`),
-    insertMessage: db.prepare(`
-      INSERT INTO messages (
-        id, session_id, ordinal, role, content, timestamp, model, referenced_files_json, metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `),
+    insertMessageBatches: new Map(),
     ...prepareSearchDocumentStatements(db)
   };
 }
@@ -347,18 +409,34 @@ function upsertSessionRecord(statement, session) {
 function replaceSessionMessages(statements, session) {
   statements.deleteMessages.run(session.id);
 
-  for (const message of session.messages) {
-    statements.insertMessage.run(
-      message.id,
-      session.id,
-      message.ordinal,
-      message.role,
-      message.content,
-      message.timestamp,
-      message.model,
-      json(message.referencedFiles || []),
-      json(message.metadata)
-    );
+  for (let start = 0; start < session.messages.length; start += MESSAGE_INSERT_BATCH_SIZE) {
+    const batch = session.messages.slice(start, start + MESSAGE_INSERT_BATCH_SIZE);
+    let statement = statements.insertMessageBatches.get(batch.length);
+    if (!statement) {
+      const rows = Array.from({ length: batch.length }, () => "(?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+      statement = statements.db.prepare(`
+        INSERT INTO messages (
+          id, session_id, ordinal, role, content, timestamp, model, referenced_files_json, metadata_json
+        ) VALUES ${rows}
+      `);
+      statements.insertMessageBatches.set(batch.length, statement);
+    }
+
+    const parameters = [];
+    for (const message of batch) {
+      parameters.push(
+        message.id,
+        session.id,
+        message.ordinal,
+        message.role,
+        message.content,
+        message.timestamp,
+        message.model,
+        json(message.referencedFiles || []),
+        json(message.metadata)
+      );
+    }
+    statement.run(...parameters);
   }
 }
 
@@ -391,6 +469,7 @@ export function upsertImportedSessions(sessions) {
     importedSessions: 0,
     updatedSessions: 0,
     skippedSessions: 0,
+    cachedSessions: 0,
     failedSessions: 0,
     errors: []
   };
@@ -399,36 +478,77 @@ export function upsertImportedSessions(sessions) {
     return stats;
   }
 
-  const fingerprintStatement = db.prepare(`SELECT fingerprint FROM sessions WHERE id = ?`);
+  let fingerprintStatement = null;
   let writeStatements = null;
+  let sourceCacheStatement = null;
+  let transactionOpen = false;
+
+  const openSessionSavepoint = () => {
+    if (!transactionOpen) {
+      db.exec("BEGIN TRANSACTION");
+      transactionOpen = true;
+    }
+    db.exec("SAVEPOINT threadvault_session_import");
+  };
 
   for (const session of sessions) {
-    let transactionOpen = false;
+    let savepointOpen = false;
     try {
+      if (session?.scanCacheHit === true) {
+        stats.skippedSessions += 1;
+        stats.cachedSessions += 1;
+        continue;
+      }
+
+      const sourceCacheRecord = sourceFileCacheRecord(session);
+      fingerprintStatement ||= db.prepare(`SELECT fingerprint FROM sessions WHERE id = ?`);
       const existing = fingerprintStatement.get(session.id);
       if (existing && existing.fingerprint === session.fingerprint) {
+        if (sourceCacheRecord) {
+          openSessionSavepoint();
+          savepointOpen = true;
+          sourceCacheStatement ||= prepareSourceFileCacheStatement(db);
+          upsertSourceFileCache(sourceCacheStatement, sourceCacheRecord);
+          db.exec("RELEASE SAVEPOINT threadvault_session_import");
+          savepointOpen = false;
+        }
         stats.skippedSessions += 1;
         continue;
       }
 
       writeStatements ||= prepareImportWriteStatements(db);
-      db.exec("BEGIN TRANSACTION");
-      transactionOpen = true;
+      openSessionSavepoint();
+      savepointOpen = true;
       upsertSessionRecord(writeStatements.upsertSession, session);
       replaceSessionMessages(writeStatements, session);
       refreshSearchDocumentWithSession(db, session, writeStatements);
+      if (sourceCacheRecord) {
+        sourceCacheStatement ||= prepareSourceFileCacheStatement(db);
+        upsertSourceFileCache(sourceCacheStatement, sourceCacheRecord);
+      }
+
+      db.exec("RELEASE SAVEPOINT threadvault_session_import");
+      savepointOpen = false;
 
       if (existing) {
         stats.updatedSessions += 1;
       } else {
         stats.importedSessions += 1;
       }
-
-      db.exec("COMMIT");
-      transactionOpen = false;
     } catch (error) {
-      if (transactionOpen) {
-        db.exec("ROLLBACK");
+      if (savepointOpen) {
+        try {
+          db.exec("ROLLBACK TO SAVEPOINT threadvault_session_import");
+          db.exec("RELEASE SAVEPOINT threadvault_session_import");
+        } catch (rollbackError) {
+          try {
+            db.exec("ROLLBACK");
+          } catch {
+            // Preserve the savepoint failure that made the batch state uncertain.
+          }
+          transactionOpen = false;
+          throw rollbackError;
+        }
       }
       stats.failedSessions += 1;
       if (stats.errors.length < 20) {
@@ -441,7 +561,48 @@ export function upsertImportedSessions(sessions) {
     }
   }
 
+  if (transactionOpen) {
+    try {
+      db.exec("COMMIT");
+    } catch (error) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        // Preserve the commit failure; the connection may already have rolled back.
+      }
+      throw error;
+    }
+  }
+
   return stats;
+}
+
+export function getSourceScanCache() {
+  const db = getDatabase();
+  const rows = db.prepare(`
+    SELECT
+      cache.source_path AS sourcePath,
+      cache.source_id AS sourceId,
+      cache.session_id AS sessionId,
+      cache.file_size AS fileSize,
+      cache.modified_at_ms AS modifiedAtMs,
+      cache.changed_at_ms AS changedAtMs,
+      cache.parser_version AS parserVersion,
+      sessions.fingerprint,
+      sessions.updated_at AS sessionUpdatedAt
+    FROM source_scan_cache cache
+    JOIN sessions ON sessions.id = cache.session_id
+  `).all();
+  const cache = new Map();
+
+  for (const row of rows) {
+    if (!row.sourcePath || !row.sourceId || !row.sessionId || !row.parserVersion) {
+      continue;
+    }
+    cache.set(fileCacheKey(row.sourcePath), row);
+  }
+
+  return cache;
 }
 
 export function listSessions({

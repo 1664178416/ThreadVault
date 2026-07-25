@@ -45,8 +45,37 @@ Notes:
 
 - `source_id` is currently one of `copilot`, `codex`, or `claude`.
 - `source_label` is stored directly on each session so the UI does not need a separate source lookup table.
-- `fingerprint` deduplicates imported sessions across scans.
+- `fingerprint` hashes the complete normalized session, including source path/status, adapter metadata, and message ids/content/metadata, so non-message source changes still refresh stored fields.
 - `metadata_json` stores adapter-specific fields and parser hints.
+
+### `source_scan_cache`
+
+```sql
+CREATE TABLE IF NOT EXISTS source_scan_cache (
+  source_path TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  modified_at_ms REAL NOT NULL,
+  changed_at_ms REAL NOT NULL,
+  parser_version TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+```
+
+Index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_source_scan_cache_session_id ON source_scan_cache(session_id);
+```
+
+Notes:
+
+- A matching source path, size, modification/change time, and parser version allows an adapter to skip transcript reads and normalization.
+- `parser_version` uses the running app fingerprint, so parser or bundled runtime changes invalidate previous cache entries.
+- Cache rows are written only after the linked session import succeeds. Existing databases populate this table incrementally without rewriting unchanged messages.
+- Stale rows are harmless: adapters consult only paths that still exist, and imported sessions remain archived when source files disappear.
 
 ### `messages`
 
@@ -127,6 +156,9 @@ Search body composition:
 ## Import And Refresh Behavior
 
 - Scans upsert sessions by `id` and keep local annotations intact.
+- Unchanged source files can be skipped before parsing when their persisted source signature matches.
+- Changed sessions share one batch transaction; per-session savepoints preserve failure isolation without paying for one disk commit per session.
+- Message replacements use bounded multi-row inserts to reduce JavaScript-to-SQLite calls during first-time or large rebuilds.
 - Messages for an imported session are replaced during import to reflect the latest parsed source state.
 - Search rows are refreshed after import and after annotation updates.
 - Imported sessions are retained when source history disappears; ThreadVault does not delete local records automatically.

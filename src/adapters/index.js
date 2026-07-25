@@ -21,18 +21,21 @@ const ADAPTERS = [
   }
 ];
 
-export function scanAllSources() {
+export function scanAllSources(options = {}) {
   const sessions = [];
   const sourceStats = [];
 
   for (const adapter of ADAPTERS) {
     try {
-      const nextSessions = adapter.scan();
+      const nextSessions = adapter.scan(options);
+      const cachedCount = nextSessions.filter((session) => session.scanCacheHit === true).length;
       sessions.push(...nextSessions);
       sourceStats.push({
         sourceId: adapter.id,
         sourceLabel: adapter.label,
         scannedCount: nextSessions.length,
+        parsedCount: nextSessions.length - cachedCount,
+        cachedCount,
         error: null
       });
     } catch (error) {
@@ -40,6 +43,8 @@ export function scanAllSources() {
         sourceId: adapter.id,
         sourceLabel: adapter.label,
         scannedCount: 0,
+        parsedCount: 0,
+        cachedCount: 0,
         error: safeErrorMessage(error, "Source scan failed.")
       });
     }

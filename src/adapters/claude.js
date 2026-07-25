@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { CLAUDE_PROJECTS_DIR } from "../config.js";
-import { listFilesRecursive, parseErrorSummary, readJsonLines, sortByModifiedDesc } from "../utils/fs.js";
-import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashSessionMessages, hashText, isLowSignalTitle, safeErrorMessage, snippet } from "../utils/text.js";
+import { fileEntriesByModifiedDesc, listFilesRecursive, parseErrorSummary, readJsonLines } from "../utils/fs.js";
+import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashNormalizedSession, isLowSignalTitle, safeErrorMessage, snippet } from "../utils/text.js";
+import { cachedSessionForFile, sourceFileSignature } from "./cache.js";
 
 function detectClaudeSource() {
   return fs.existsSync(CLAUDE_PROJECTS_DIR);
@@ -176,16 +177,7 @@ function normalizeSession(records, filePath) {
   const updatedAt = messages[messages.length - 1]?.timestamp || createdAt;
   const title = deriveTitle("", firstUserMessage, "Untitled Claude Session");
   const searchableText = messages.map((message) => message.content).join("\n");
-  const fingerprint = hashText([
-    "claude",
-    sourceSessionId,
-    workspacePath || "",
-    title,
-    createdAt || "",
-    hashSessionMessages(messages)
-  ].join("|"));
-
-  return {
+  const session = {
     id: sessionId,
     sourceId: "claude",
     sourceLabel: "Claude Code",
@@ -196,7 +188,7 @@ function normalizeSession(records, filePath) {
     createdAt,
     updatedAt,
     resumeType: workspacePath ? "workspace_only" : "archive_only",
-    fingerprint,
+    fingerprint: "",
     sourcePath: filePath,
     status: "ready",
     summary: snippet(searchableText, 220),
@@ -208,9 +200,11 @@ function normalizeSession(records, filePath) {
     },
     messages
   };
+  session.fingerprint = hashNormalizedSession(session);
+  return session;
 }
 
-export function scanClaudeSessions() {
+export function scanClaudeSessions(options = {}) {
   if (!detectClaudeSource()) {
     return [];
   }
@@ -218,19 +212,28 @@ export function scanClaudeSessions() {
   const files = listFilesRecursive(CLAUDE_PROJECTS_DIR)
     .filter((filePath) => filePath.endsWith(".jsonl"))
     .filter((filePath) => !filePath.includes(`${path.sep}subagents${path.sep}`));
-  const sortedFiles = sortByModifiedDesc(files);
+  const sortedFiles = fileEntriesByModifiedDesc(files);
 
   const sessions = [];
-  for (const filePath of sortedFiles) {
+  for (const fileEntry of sortedFiles) {
+    const { filePath } = fileEntry;
+    const sourceFile = sourceFileSignature(fileEntry, options.parserVersion);
+    const cachedSession = cachedSessionForFile("claude", fileEntry, options.sourceCache, options.parserVersion);
+    if (cachedSession) {
+      sessions.push(cachedSession);
+      continue;
+    }
+
     try {
       const records = readJsonLines(filePath);
       const normalized = normalizeSession(records, filePath);
       if (normalized) {
+        normalized.sourceFile = sourceFile;
         sessions.push(normalized);
       }
     } catch (error) {
       const parseError = safeErrorMessage(error, "Session file could not be parsed.");
-      sessions.push({
+      const session = {
         id: `claude:error:${path.basename(filePath)}`,
         sourceId: "claude",
         sourceLabel: "Claude Code",
@@ -241,7 +244,7 @@ export function scanClaudeSessions() {
         createdAt: null,
         updatedAt: null,
         resumeType: "archive_only",
-        fingerprint: hashText(`claude:error|${filePath}`),
+        fingerprint: "",
         sourcePath: filePath,
         status: "parse_error",
         summary: parseError,
@@ -249,8 +252,11 @@ export function scanClaudeSessions() {
         metadata: {
           error: parseError
         },
+        sourceFile,
         messages: []
-      });
+      };
+      session.fingerprint = hashNormalizedSession(session);
+      sessions.push(session);
     }
   }
 

@@ -1,5 +1,6 @@
 import { scanAllSources } from "../adapters/index.js";
-import { getStats, getSessionDetail, listSessions, updateSessionAnnotation, upsertImportedSessions } from "../db/repository.js";
+import { RUNTIME_FINGERPRINT } from "../config.js";
+import { getSourceScanCache, getStats, getSessionDetail, listSessions, updateSessionAnnotation, upsertImportedSessions } from "../db/repository.js";
 import { safeErrorMessage } from "../utils/text.js";
 
 function summarizeSourceErrors(sourceStats = []) {
@@ -18,7 +19,11 @@ function summarizeSourceErrors(sourceStats = []) {
 }
 
 export function runFullScan() {
-  const { sessions, sourceStats } = scanAllSources();
+  const sourceCache = getSourceScanCache();
+  const { sessions, sourceStats } = scanAllSources({
+    parserVersion: RUNTIME_FINGERPRINT,
+    sourceCache
+  });
   const writeStats = upsertImportedSessions(sessions);
   const sourceErrorStats = summarizeSourceErrors(sourceStats);
 

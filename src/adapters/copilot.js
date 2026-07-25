@@ -2,10 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { COPILOT_EMPTY_WINDOW_DIR } from "../config.js";
-import { listFiles, parseErrorSummary, readJsonFile, sortByModifiedDesc } from "../utils/fs.js";
+import { fileEntriesByModifiedDesc, listFiles, parseErrorSummary, readJsonFile } from "../utils/fs.js";
 import { applyJsonLineOperations } from "../utils/jsonPatch.js";
-import { displayText, deriveTitle, hasInternalContext, hashSessionMessages, hashText, safeErrorMessage, snippet } from "../utils/text.js";
+import { displayText, deriveTitle, hasInternalContext, hashNormalizedSession, safeErrorMessage, snippet } from "../utils/text.js";
 import { toIsoFromEpoch } from "../utils/time.js";
+import { cachedSessionForFile, sourceFileSignature } from "./cache.js";
 
 function flattenResponseChunks(response = []) {
   const assistantParts = [];
@@ -127,15 +128,7 @@ function normalizeSession(rawSession, filePath) {
   const title = deriveTitle(rawSession.customTitle, firstUserMessage, "Untitled Copilot Session");
   const workspacePath = findWorkspacePath(rawSession);
   const searchableText = messages.map((message) => message.content).join("\n");
-  const fingerprint = hashText([
-    "copilot",
-    sessionId,
-    workspacePath || "",
-    title,
-    hashSessionMessages(messages)
-  ].join("|"));
-
-  return {
+  const session = {
     id: `copilot:${sessionId}`,
     sourceId: "copilot",
     sourceLabel: "GitHub Copilot Chat",
@@ -146,7 +139,7 @@ function normalizeSession(rawSession, filePath) {
     createdAt: toIsoFromEpoch(rawSession.creationDate),
     updatedAt: toIsoFromEpoch(rawSession.lastMessageDate || rawSession.creationDate),
     resumeType: workspacePath ? "workspace_only" : "archive_only",
-    fingerprint,
+    fingerprint: "",
     sourcePath: filePath,
     status: rawSession.hasPendingEdits ? "pending_edits" : "ready",
     summary: snippet(searchableText, 220),
@@ -160,6 +153,8 @@ function normalizeSession(rawSession, filePath) {
     },
     messages
   };
+  session.fingerprint = hashNormalizedSession(session);
+  return session;
 }
 
 function parseJsonFile(filePath) {
@@ -185,17 +180,25 @@ export function detectCopilotSource() {
   return fs.existsSync(COPILOT_EMPTY_WINDOW_DIR);
 }
 
-export function scanCopilotSessions() {
+export function scanCopilotSessions(options = {}) {
   if (!detectCopilotSource()) {
     return [];
   }
 
   const files = listFiles(COPILOT_EMPTY_WINDOW_DIR)
     .filter((filePath) => filePath.endsWith(".json") || filePath.endsWith(".jsonl"));
-  const sortedFiles = sortByModifiedDesc(files);
+  const sortedFiles = fileEntriesByModifiedDesc(files);
 
   const sessions = [];
-  for (const filePath of sortedFiles) {
+  for (const fileEntry of sortedFiles) {
+    const { filePath } = fileEntry;
+    const sourceFile = sourceFileSignature(fileEntry, options.parserVersion);
+    const cachedSession = cachedSessionForFile("copilot", fileEntry, options.sourceCache, options.parserVersion);
+    if (cachedSession) {
+      sessions.push(cachedSession);
+      continue;
+    }
+
     try {
       const rawSession = parseSessionFile(filePath);
       if (!rawSession || !Array.isArray(rawSession.requests)) {
@@ -205,10 +208,11 @@ export function scanCopilotSessions() {
       if (normalized.messages.length === 0) {
         continue;
       }
+      normalized.sourceFile = sourceFile;
       sessions.push(normalized);
     } catch (error) {
       const parseError = safeErrorMessage(error, "Session file could not be parsed.");
-      sessions.push({
+      const session = {
         id: `copilot:error:${path.basename(filePath)}`,
         sourceId: "copilot",
         sourceLabel: "GitHub Copilot Chat",
@@ -219,7 +223,7 @@ export function scanCopilotSessions() {
         createdAt: null,
         updatedAt: null,
         resumeType: "archive_only",
-        fingerprint: hashText(`error|${filePath}`),
+        fingerprint: "",
         sourcePath: filePath,
         status: "parse_error",
         summary: parseError,
@@ -227,8 +231,11 @@ export function scanCopilotSessions() {
         metadata: {
           error: parseError
         },
+        sourceFile,
         messages: []
-      });
+      };
+      session.fingerprint = hashNormalizedSession(session);
+      sessions.push(session);
     }
   }
 

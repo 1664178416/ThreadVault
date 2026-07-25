@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 
 import { CODEX_ARCHIVED_SESSIONS_DIR, CODEX_SESSIONS_DIR } from "../config.js";
-import { listFilesRecursive, parseErrorSummary, readJsonLines, sortByModifiedDesc } from "../utils/fs.js";
-import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashSessionMessages, hashText, safeErrorMessage, snippet } from "../utils/text.js";
+import { fileEntriesByModifiedDesc, listFilesRecursive, parseErrorSummary, readJsonLines } from "../utils/fs.js";
+import { basenameFromPath, cleanTitleCandidate, displayText, deriveTitle, hasInternalContext, hashNormalizedSession, safeErrorMessage, snippet } from "../utils/text.js";
+import { cachedSessionForFile, sourceFileSignature } from "./cache.js";
 
 function detectCodexSource() {
   return fs.existsSync(CODEX_SESSIONS_DIR) || fs.existsSync(CODEX_ARCHIVED_SESSIONS_DIR);
@@ -335,16 +336,7 @@ function normalizeSession(records, filePath, options = {}) {
   const createdAt = sessionMeta.timestamp || records[0]?.timestamp || null;
   const updatedAt = records[records.length - 1]?.timestamp || createdAt;
   const searchableText = messages.map((message) => message.content).join("\n");
-  const fingerprint = hashText([
-    "codex",
-    sourceSessionId,
-    workspacePath || "",
-    title,
-    createdAt || "",
-    hashSessionMessages(messages)
-  ].join("|"));
-
-  return {
+  const session = {
     id: sessionId,
     sourceId: "codex",
     sourceLabel: "Codex",
@@ -355,7 +347,7 @@ function normalizeSession(records, filePath, options = {}) {
     createdAt,
     updatedAt,
     resumeType: workspacePath ? "workspace_only" : "archive_only",
-    fingerprint,
+    fingerprint: "",
     sourcePath: filePath,
     status: "ready",
     summary: snippet(searchableText, 220),
@@ -370,6 +362,8 @@ function normalizeSession(records, filePath, options = {}) {
     },
     messages
   };
+  session.fingerprint = hashNormalizedSession(session);
+  return session;
 }
 
 function sourceSessionIdFromFilePath(filePath) {
@@ -409,28 +403,40 @@ function codexSessionFileEntries() {
   return entries;
 }
 
-export function scanCodexSessions() {
+export function scanCodexSessions(options = {}) {
   if (!detectCodexSource()) {
     return [];
   }
 
   const entries = codexSessionFileEntries();
   const entryByPath = new Map(entries.map((entry) => [entry.filePath, entry]));
-  const sortedEntries = sortByModifiedDesc(entries.map((entry) => entry.filePath))
-    .map((filePath) => entryByPath.get(filePath))
+  const sortedEntries = fileEntriesByModifiedDesc(entries.map((entry) => entry.filePath))
+    .map((fileEntry) => {
+      const sourceEntry = entryByPath.get(fileEntry.filePath);
+      return sourceEntry ? { ...fileEntry, ...sourceEntry } : null;
+    })
     .filter(Boolean);
 
   const sessions = [];
-  for (const { filePath, sourceArchived } of sortedEntries) {
+  for (const fileEntry of sortedEntries) {
+    const { filePath, sourceArchived } = fileEntry;
+    const sourceFile = sourceFileSignature(fileEntry, options.parserVersion);
+    const cachedSession = cachedSessionForFile("codex", fileEntry, options.sourceCache, options.parserVersion);
+    if (cachedSession) {
+      sessions.push(cachedSession);
+      continue;
+    }
+
     try {
       const records = readJsonLines(filePath);
       const normalized = normalizeSession(records, filePath, { sourceArchived });
       if (normalized) {
+        normalized.sourceFile = sourceFile;
         sessions.push(normalized);
       }
     } catch (error) {
       const parseError = safeErrorMessage(error, "Session file could not be parsed.");
-      sessions.push({
+      const session = {
         id: `codex:error:${path.basename(filePath)}`,
         sourceId: "codex",
         sourceLabel: "Codex",
@@ -441,7 +447,7 @@ export function scanCodexSessions() {
         createdAt: null,
         updatedAt: null,
         resumeType: "archive_only",
-        fingerprint: hashText(`codex:error|${filePath}`),
+        fingerprint: "",
         sourcePath: filePath,
         status: "parse_error",
         summary: parseError,
@@ -450,8 +456,11 @@ export function scanCodexSessions() {
           error: parseError,
           sourceArchived
         },
+        sourceFile,
         messages: []
-      });
+      };
+      session.fingerprint = hashNormalizedSession(session);
+      sessions.push(session);
     }
   }
 

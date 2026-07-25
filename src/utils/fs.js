@@ -44,15 +44,31 @@ export function safeStat(filePath) {
   }
 }
 
-export function sortByModifiedDesc(filePaths) {
+export function fileCacheKey(filePath) {
+  const normalized = path.normalize(String(filePath || ""));
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+export function fileEntriesByModifiedDesc(filePaths) {
   return filePaths
     .map((filePath, index) => ({
       filePath,
       index,
-      modifiedAt: safeStat(filePath)?.mtimeMs || 0
+      stat: safeStat(filePath)
     }))
-    .sort((left, right) => right.modifiedAt - left.modifiedAt || left.index - right.index)
-    .map((entry) => entry.filePath);
+    .map(({ filePath, index, stat }) => ({
+      filePath,
+      index,
+      size: stat?.size ?? null,
+      modifiedAtMs: stat?.mtimeMs ?? null,
+      changedAtMs: stat?.ctimeMs ?? null
+    }))
+    .sort((left, right) => (right.modifiedAtMs || 0) - (left.modifiedAtMs || 0) || left.index - right.index)
+    .map(({ index, ...entry }) => entry);
+}
+
+export function sortByModifiedDesc(filePaths) {
+  return fileEntriesByModifiedDesc(filePaths).map((entry) => entry.filePath);
 }
 
 export function listFiles(dirPath) {
@@ -62,9 +78,9 @@ export function listFiles(dirPath) {
 
   try {
     return fs
-      .readdirSync(dirPath)
-      .map((name) => path.join(dirPath, name))
-      .filter((filePath) => safeStat(filePath)?.isFile());
+      .readdirSync(dirPath, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.join(dirPath, entry.name));
   } catch {
     return [];
   }

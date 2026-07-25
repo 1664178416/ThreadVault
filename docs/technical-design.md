@@ -40,13 +40,16 @@ The browser UI lives in `public/`. The VS Code extension packages a generated co
 
 ## Data Flow
 
-1. `runFullScan()` calls every source adapter.
-2. Adapters return normalized sessions and source-level diagnostics.
-3. `upsertImportedSessions()` writes sessions and messages transactionally.
-4. The FTS table is refreshed from message content, referenced files, tags, and notes.
-5. The UI queries `/api/sessions` and `/api/sessions/:id`.
-6. User annotations are saved through `/api/session-meta`.
-7. Markdown export and memory save call `/api/export` and `/api/memory`.
+1. `runFullScan()` loads the local source-file signature cache and calls every source adapter.
+2. Adapters stat candidate files once. Files whose path, size, modification/change time, and runtime fingerprint still match bypass transcript reads and parsing.
+3. New, changed, or parser-invalidated files are normalized into sessions with source-level diagnostics.
+4. `upsertImportedSessions()` writes sessions, messages, and successful source signatures in one batch transaction, using a per-session savepoint so one malformed session can roll back without blocking the rest.
+5. The FTS table is refreshed from message content, referenced files, tags, and notes.
+6. The UI queries `/api/sessions` and `/api/sessions/:id`.
+7. User annotations are saved through `/api/session-meta`.
+8. Markdown export and memory save call `/api/export` and `/api/memory`.
+
+The source cache stores file metadata and the linked session id, not a second transcript copy. A runtime fingerprint change invalidates cached files so parser changes receive one full rescan before incremental scanning resumes. Normalized session fingerprints include source location, state, adapter metadata, and message metadata, preventing a changed file with unchanged visible text from freezing stale session fields into the cache.
 
 ## Local Data
 
@@ -97,6 +100,7 @@ When installed from VSIX or Marketplace, the extension copies the bundled app in
 - Favorite/hidden state regression
 - Markdown export and memory save regression
 - Search fallback and query limit behavior
+- Incremental source cache hits, file/parser invalidation, upgrade backfill, and rollback behavior
 - CORS/write-origin behavior
 - Real HTTP behavior for root page, security headers, path traversal, health diagnostics, cross-origin writes, and oversized request bodies
 - Error redaction, open-target shape checks, bounded Markdown filenames, and frontend response parsing guardrails
