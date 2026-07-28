@@ -197,6 +197,7 @@ function buildFallbackSearchSnippet(row, query) {
     row.noteText,
     row.workspaceName,
     row.tagsJson,
+    row.sourceLabel,
     row.fallbackMessageContent,
     row.fallbackReferencedFiles,
     row.fallbackModel
@@ -210,6 +211,52 @@ function buildFallbackSearchSnippet(row, query) {
   }
 
   return null;
+}
+
+function hydrateFtsSearchSnippets(db, rows, query) {
+  const terms = fallbackSnippetTerms(query);
+  if (rows.length === 0 || terms.length === 0) {
+    return rows;
+  }
+
+  const pendingRows = [];
+  for (const row of rows) {
+    row.searchSnippet = buildFallbackSearchSnippet(row, query);
+    if (!row.searchSnippet) {
+      pendingRows.push(row);
+    }
+  }
+
+  if (pendingRows.length === 0) {
+    return rows;
+  }
+
+  const messageMatchClause = terms
+    .map(() => "(m.content LIKE ? ESCAPE '\\\\' OR m.referenced_files_json LIKE ? ESCAPE '\\\\')")
+    .join(" OR ");
+  const statement = db.prepare(`
+    SELECT
+      m.content AS fallbackMessageContent,
+      m.referenced_files_json AS fallbackReferencedFiles
+    FROM messages m
+    WHERE m.session_id = ?
+      AND (${messageMatchClause})
+    ORDER BY m.ordinal ASC
+    LIMIT 1
+  `);
+  const matchParams = terms.flatMap((term) => {
+    const likeTerm = escapeLikeQuery(term);
+    return [likeTerm, likeTerm];
+  });
+
+  for (const row of pendingRows) {
+    const messageMatch = statement.get(row.id, ...matchParams);
+    if (messageMatch) {
+      row.searchSnippet = buildFallbackSearchSnippet({ ...row, ...messageMatch }, query);
+    }
+  }
+
+  return rows;
 }
 
 function defaultAnnotation(sessionId) {
@@ -659,7 +706,7 @@ export function listSessions({
           COALESCE(a.tags_json, '[]') AS tagsJson,
           COALESCE(a.note_text, '') AS noteText,
           COALESCE(a.updated_at, '') AS annotationUpdatedAt,
-          snippet(session_search, 4, '<mark>', '</mark>', ' ... ', 24) AS searchSnippet
+          NULL AS searchSnippet
         FROM session_search
         JOIN sessions s ON s.id = session_search.session_id
         LEFT JOIN session_annotations a ON a.session_id = s.id
@@ -671,9 +718,25 @@ export function listSessions({
         LIMIT ?
       `);
       const params = normalizedSourceId ? [ftsQuery, normalizedSourceId, normalizedLimit] : [ftsQuery, normalizedLimit];
-      return statement.all(...params).map(deserializeSessionRow);
+      return hydrateFtsSearchSnippets(db, statement.all(...params), normalizedQuery).map(deserializeSessionRow);
     } catch {
+      const sourceClauseFallback = normalizedSourceId ? "AND sessions.source_id = ?2" : "";
+      const limitPlaceholder = normalizedSourceId ? "?3" : "?2";
       const fallback = db.prepare(`
+        WITH message_matches AS MATERIALIZED (
+          SELECT
+            m.session_id AS sessionId,
+            MAX(CASE WHEN m.content LIKE ?1 ESCAPE '\\' THEN 1 ELSE 0 END) AS contentMatch,
+            MAX(CASE WHEN m.referenced_files_json LIKE ?1 ESCAPE '\\' THEN 1 ELSE 0 END) AS fileMatch,
+            MAX(CASE WHEN COALESCE(m.model, '') LIKE ?1 ESCAPE '\\' THEN 1 ELSE 0 END) AS modelMatch,
+            MIN(m.ordinal) AS firstMatchOrdinal
+          FROM messages m
+          WHERE
+            m.content LIKE ?1 ESCAPE '\\' OR
+            m.referenced_files_json LIKE ?1 ESCAPE '\\' OR
+            COALESCE(m.model, '') LIKE ?1 ESCAPE '\\'
+          GROUP BY m.session_id
+        )
         SELECT
           sessions.id,
           sessions.source_id AS sourceId,
@@ -696,97 +759,42 @@ export function listSessions({
           COALESCE(a.note_text, '') AS noteText,
           COALESCE(a.updated_at, '') AS annotationUpdatedAt,
           (
-            CASE WHEN sessions.title LIKE ? ESCAPE '\\' THEN 80 ELSE 0 END +
-            CASE WHEN COALESCE(a.tags_json, '[]') LIKE ? ESCAPE '\\' THEN 70 ELSE 0 END +
-            CASE WHEN sessions.summary LIKE ? ESCAPE '\\' THEN 55 ELSE 0 END +
-            CASE WHEN COALESCE(a.note_text, '') LIKE ? ESCAPE '\\' THEN 45 ELSE 0 END +
-            CASE WHEN sessions.workspace_name LIKE ? ESCAPE '\\' THEN 35 ELSE 0 END +
-            CASE WHEN EXISTS (
-              SELECT 1
-              FROM messages m
-              WHERE m.session_id = sessions.id
-              AND m.content LIKE ? ESCAPE '\\'
-            ) THEN 30 ELSE 0 END +
-            CASE WHEN EXISTS (
-              SELECT 1
-              FROM messages m
-              WHERE m.session_id = sessions.id
-              AND m.referenced_files_json LIKE ? ESCAPE '\\'
-            ) THEN 25 ELSE 0 END +
-            CASE WHEN EXISTS (
-              SELECT 1
-              FROM messages m
-              WHERE m.session_id = sessions.id
-              AND COALESCE(m.model, '') LIKE ? ESCAPE '\\'
-            ) THEN 20 ELSE 0 END
+            CASE WHEN sessions.title LIKE ?1 ESCAPE '\\' THEN 80 ELSE 0 END +
+            CASE WHEN COALESCE(a.tags_json, '[]') LIKE ?1 ESCAPE '\\' THEN 70 ELSE 0 END +
+            CASE WHEN sessions.summary LIKE ?1 ESCAPE '\\' THEN 55 ELSE 0 END +
+            CASE WHEN COALESCE(a.note_text, '') LIKE ?1 ESCAPE '\\' THEN 45 ELSE 0 END +
+            CASE WHEN sessions.workspace_name LIKE ?1 ESCAPE '\\' THEN 35 ELSE 0 END +
+            COALESCE(message_matches.contentMatch, 0) * 30 +
+            COALESCE(message_matches.fileMatch, 0) * 25 +
+            COALESCE(message_matches.modelMatch, 0) * 20
           ) AS fallbackRank,
-          (
-            SELECT m.content
-            FROM messages m
-            WHERE m.session_id = sessions.id
-            AND m.content LIKE ? ESCAPE '\\'
-            ORDER BY m.ordinal ASC
-            LIMIT 1
-          ) AS fallbackMessageContent,
-          (
-            SELECT m.referenced_files_json
-            FROM messages m
-            WHERE m.session_id = sessions.id
-            AND m.referenced_files_json LIKE ? ESCAPE '\\'
-            ORDER BY m.ordinal ASC
-            LIMIT 1
-          ) AS fallbackReferencedFiles,
-          (
-            SELECT m.model
-            FROM messages m
-            WHERE m.session_id = sessions.id
-            AND COALESCE(m.model, '') LIKE ? ESCAPE '\\'
-            ORDER BY m.ordinal ASC
-            LIMIT 1
-          ) AS fallbackModel
+          fallback_message.content AS fallbackMessageContent,
+          fallback_message.referenced_files_json AS fallbackReferencedFiles,
+          fallback_message.model AS fallbackModel
         FROM sessions
         LEFT JOIN session_annotations a ON a.session_id = sessions.id
+        LEFT JOIN message_matches ON message_matches.sessionId = sessions.id
+        LEFT JOIN messages fallback_message
+          ON fallback_message.session_id = message_matches.sessionId
+          AND fallback_message.ordinal = message_matches.firstMatchOrdinal
         WHERE (
-          sessions.title LIKE ? ESCAPE '\\' OR
-          sessions.summary LIKE ? ESCAPE '\\' OR
-          COALESCE(a.note_text, '') LIKE ? ESCAPE '\\' OR
-          sessions.workspace_name LIKE ? ESCAPE '\\' OR
-          COALESCE(a.tags_json, '[]') LIKE ? ESCAPE '\\' OR
-          EXISTS (
-            SELECT 1
-            FROM messages m
-            WHERE m.session_id = sessions.id
-            AND (
-              m.content LIKE ? ESCAPE '\\' OR
-              m.referenced_files_json LIKE ? ESCAPE '\\' OR
-              COALESCE(m.model, '') LIKE ? ESCAPE '\\'
-            )
-          )
+          sessions.title LIKE ?1 ESCAPE '\\' OR
+          sessions.summary LIKE ?1 ESCAPE '\\' OR
+          COALESCE(a.note_text, '') LIKE ?1 ESCAPE '\\' OR
+          sessions.workspace_name LIKE ?1 ESCAPE '\\' OR
+          COALESCE(a.tags_json, '[]') LIKE ?1 ESCAPE '\\' OR
+          message_matches.sessionId IS NOT NULL
         )
         ${archivedClause}
         ${favoriteClause}
-        ${sourceClausePlain}
+        ${sourceClauseFallback}
         ORDER BY fallbackRank DESC, COALESCE(sessions.updated_at, sessions.created_at) DESC
-        LIMIT ?
+        LIMIT ${limitPlaceholder}
       `);
       const likeQuery = escapeLikeQuery(normalizedQuery);
-      const fallbackRankParams = Array(8).fill(likeQuery);
-      const fallbackSnippetParams = Array(3).fill(likeQuery);
-      const fallbackMatchParams = Array(8).fill(likeQuery);
       const params = normalizedSourceId
-        ? [
-            ...fallbackRankParams,
-            ...fallbackSnippetParams,
-            ...fallbackMatchParams,
-            normalizedSourceId,
-            normalizedLimit
-          ]
-        : [
-            ...fallbackRankParams,
-            ...fallbackSnippetParams,
-            ...fallbackMatchParams,
-            normalizedLimit
-          ];
+        ? [likeQuery, normalizedSourceId, normalizedLimit]
+        : [likeQuery, normalizedLimit];
       return fallback.all(...params).map((row) => deserializeSessionRow({
         ...row,
         searchSnippet: buildFallbackSearchSnippet(row, normalizedQuery)

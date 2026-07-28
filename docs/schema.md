@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_source_scan_cache_session_id ON source_scan_cache
 Notes:
 
 - A matching source path, size, modification/change time, and parser version allows an adapter to skip transcript reads and normalization.
-- `parser_version` uses the running app fingerprint, so parser or bundled runtime changes invalidate previous cache entries.
+- `parser_version` uses a fingerprint of adapters, parser utilities, and source configuration. Parser changes invalidate previous cache entries, while UI-only and server-only changes do not trigger full transcript reparsing.
 - Cache rows are written only after the linked session import succeeds. Existing databases populate this table incrementally without rewriting unchanged messages.
 - Stale rows are harmless: adapters consult only paths that still exist, and imported sessions remain archived when source files disappear.
 
@@ -97,12 +97,13 @@ CREATE TABLE IF NOT EXISTS messages (
 Index:
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_messages_session_ordinal ON messages(session_id, ordinal);
 ```
 
 Notes:
 
 - `ordinal` preserves transcript order.
+- The composite index serves session lookups in transcript order without a temporary sort.
 - `role` is normalized to user, assistant, system, tool, or source-specific fallback values.
 - Referenced files are stored as JSON for simple rendering and search refresh.
 
@@ -161,6 +162,7 @@ Search body composition:
 - Message replacements use bounded multi-row inserts to reduce JavaScript-to-SQLite calls during first-time or large rebuilds.
 - Messages for an imported session are replaced during import to reflect the latest parsed source state.
 - Search rows are refreshed after import and after annotation updates.
+- FTS result previews fetch only the first matching message instead of running `snippet()` across each complete transcript; punctuation-only fallback search aggregates message matches in one pass.
 - Imported sessions are retained when source history disappears; ThreadVault does not delete local records automatically.
 
 ## Markdown Outputs

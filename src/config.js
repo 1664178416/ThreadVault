@@ -66,18 +66,22 @@ function listFilesRecursive(rootPath) {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
-function computeAppFingerprint(rootPath) {
+function computeFingerprint(rootPath, entryNames) {
   try {
     const hash = crypto.createHash("sha256");
-    for (const entryName of ["src", "public"]) {
+    const files = [];
+    for (const entryName of entryNames) {
       const entryRoot = path.join(rootPath, entryName);
-      for (const filePath of listFilesRecursive(entryRoot)) {
-        const relativePath = path.relative(rootPath, filePath).replaceAll(path.sep, "/");
-        hash.update(relativePath);
-        hash.update("\0");
-        hash.update(fs.readFileSync(filePath));
-        hash.update("\0");
-      }
+      const entryStat = fs.statSync(entryRoot);
+      files.push(...(entryStat.isDirectory() ? listFilesRecursive(entryRoot) : [entryRoot]));
+    }
+
+    for (const filePath of files.sort((left, right) => left.localeCompare(right))) {
+      const relativePath = path.relative(rootPath, filePath).replaceAll(path.sep, "/");
+      hash.update(relativePath);
+      hash.update("\0");
+      hash.update(fs.readFileSync(filePath));
+      hash.update("\0");
     }
     return hash.digest("hex");
   } catch {
@@ -85,10 +89,19 @@ function computeAppFingerprint(rootPath) {
   }
 }
 
+function computeAppFingerprint(rootPath) {
+  return computeFingerprint(rootPath, ["src", "public"]);
+}
+
+function computeParserFingerprint(rootPath) {
+  return computeFingerprint(rootPath, ["src/adapters", "src/utils", "src/config.js"]);
+}
+
 export const APP_NAME = "ThreadVault";
 export const APP_PORT = parsePort(process.env.THREADVAULT_PORT);
 export const APP_HOST = normalizeHostSetting(process.env.THREADVAULT_HOST);
 export const RUNTIME_FINGERPRINT = String(process.env.THREADVAULT_RUNTIME_FINGERPRINT || "").trim() || computeAppFingerprint(APP_ROOT);
+export const PARSER_FINGERPRINT = String(process.env.THREADVAULT_PARSER_FINGERPRINT || "").trim() || computeParserFingerprint(APP_ROOT);
 export const DATA_DIR = expandConfigPath(process.env.THREADVAULT_DATA_DIR, path.join(APP_ROOT, "data"));
 export const DB_PATH = path.join(DATA_DIR, "threadvault.sqlite");
 export const EXPORT_DIR = path.join(DATA_DIR, "exports");

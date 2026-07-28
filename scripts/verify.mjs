@@ -651,11 +651,13 @@ function runStateAndExportRegression() {
         throw new Error(\`prefix FTS search should match Regression summary: \${JSON.stringify(prefixSearch)}\`);
       }
       const messagePrefixSearch = listSessions({ query: "loc" });
-      if (!messagePrefixSearch.some((result) => result.id === session.id)) {
+      const messagePrefixResult = messagePrefixSearch.find((result) => result.id === session.id);
+      if (!messagePrefixResult?.searchSnippet?.includes("<mark>loc</mark>")) {
         throw new Error(\`prefix FTS search should match message text: \${JSON.stringify(messagePrefixSearch)}\`);
       }
       const referencedFileSearch = listSessions({ query: "[app].js" });
-      if (!referencedFileSearch.some((result) => result.id === session.id)) {
+      const referencedFileResult = referencedFileSearch.find((result) => result.id === session.id);
+      if (!referencedFileResult?.searchSnippet?.includes("<mark>[app].js</mark>")) {
         throw new Error(\`search should match referenced file names with punctuation: \${JSON.stringify(referencedFileSearch)}\`);
       }
       const tagPrefixSearch = listSessions({ query: "Mem" });
@@ -1547,7 +1549,8 @@ function runIncrementalSourceCacheRegression() {
       USERPROFILE: tempRoot,
       HOME: tempRoot,
       THREADVAULT_DATA_DIR: path.join(tempRoot, "data"),
-      THREADVAULT_RUNTIME_FINGERPRINT: "cache-regression-v1"
+      THREADVAULT_RUNTIME_FINGERPRINT: "cache-regression-runtime-v1",
+      THREADVAULT_PARSER_FINGERPRINT: "cache-regression-v1"
     });
   } finally {
     const resolved = path.resolve(tempRoot);
@@ -2054,8 +2057,59 @@ function runConfigPathRegression() {
   });
 }
 
+function runFingerprintScopeRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-fingerprint-scope-"));
+
+  try {
+    fs.mkdirSync(path.join(tempRoot, "src", "adapters"), { recursive: true });
+    fs.mkdirSync(path.join(tempRoot, "src", "utils"), { recursive: true });
+    fs.mkdirSync(path.join(tempRoot, "public"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, "src", "adapters", "fixture.js"), "export const adapter = 1;\n", "utf8");
+    fs.writeFileSync(path.join(tempRoot, "src", "utils", "fixture.js"), "export const utility = 1;\n", "utf8");
+    fs.writeFileSync(path.join(tempRoot, "src", "config.js"), "export const fixture = 1;\n", "utf8");
+    fs.writeFileSync(path.join(tempRoot, "public", "app.js"), "export const ui = 1;\n", "utf8");
+
+    runModuleInput("fingerprint scope regression failed", `
+      import fs from "node:fs";
+      import path from "node:path";
+
+      const root = ${JSON.stringify(tempRoot)};
+      const first = await import("./src/config.js?scope=first");
+      fs.appendFileSync(path.join(root, "public", "app.js"), "export const ui2 = 2;\\n", "utf8");
+      const publicChanged = await import("./src/config.js?scope=public-changed");
+
+      if (!first.RUNTIME_FINGERPRINT || !first.PARSER_FINGERPRINT) {
+        throw new Error("computed fingerprints should not be empty");
+      }
+      if (first.RUNTIME_FINGERPRINT === publicChanged.RUNTIME_FINGERPRINT) {
+        throw new Error("public changes should invalidate the runtime fingerprint");
+      }
+      if (first.PARSER_FINGERPRINT !== publicChanged.PARSER_FINGERPRINT) {
+        throw new Error("public changes should not invalidate the parser fingerprint");
+      }
+
+      fs.appendFileSync(path.join(root, "src", "adapters", "fixture.js"), "export const adapter2 = 2;\\n", "utf8");
+      const parserChanged = await import("./src/config.js?scope=parser-changed");
+      if (publicChanged.PARSER_FINGERPRINT === parserChanged.PARSER_FINGERPRINT) {
+        throw new Error("adapter changes should invalidate the parser fingerprint");
+      }
+    `, {
+      THREADVAULT_APP_ROOT: tempRoot,
+      THREADVAULT_RUNTIME_FINGERPRINT: "",
+      THREADVAULT_PARSER_FINGERPRINT: ""
+    });
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-fingerprint-scope-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
 assertGlobLikeSelfTest();
 runConfigPathRegression();
+runFingerprintScopeRegression();
 runStateAndExportRegression();
 runServerCorsRegression();
 runServerHttpRegression();
@@ -2606,14 +2660,18 @@ assertFileContains("src/db/repository.js", [
   "failedSessions",
   "stats.errors",
   "const likeQuery = escapeLikeQuery(normalizedQuery)",
+  "function hydrateFtsSearchSnippets",
+  "NULL AS searchSnippet",
   "AS fallbackRank",
   "ORDER BY fallbackRank DESC",
-  "const fallbackRankParams = Array(8).fill(likeQuery)",
+  "WITH message_matches AS MATERIALIZED",
+  "MIN(m.ordinal) AS firstMatchOrdinal",
+  "message_matches.sessionId IS NOT NULL",
   "ESCAPE '\\\\'",
-  "COALESCE(a.tags_json, '[]') LIKE ?",
+  "COALESCE(a.tags_json, '[]') LIKE ?1",
   "FROM messages m",
-  "m.content LIKE ?",
-  "m.referenced_files_json LIKE ?",
+  "m.content LIKE ?1",
+  "m.referenced_files_json LIKE ?1",
   "const MESSAGE_INSERT_BATCH_SIZE = 100",
   "insertMessageBatches: new Map()",
   "statement.run(...parameters)",
@@ -2626,7 +2684,9 @@ assertFileContains("src/db/repository.js", [
 
 assertFileContains("src/db/database.js", [
   "SET favorite = 0",
-  "WHERE favorite = 1 AND archived = 1"
+  "WHERE favorite = 1 AND archived = 1",
+  "idx_messages_session_ordinal ON messages(session_id, ordinal)",
+  "DROP INDEX IF EXISTS idx_messages_session_id"
 ]);
 
 assertFileContains("extension/extension.js", [
@@ -2855,8 +2915,11 @@ assertFileContains("src/db/repository.js", [
 ]);
 
 assertFileContains("src/config.js", [
+  "function computeFingerprint",
   "function computeAppFingerprint",
-  "RUNTIME_FINGERPRINT = String(process.env.THREADVAULT_RUNTIME_FINGERPRINT || \"\").trim() || computeAppFingerprint(APP_ROOT)"
+  "function computeParserFingerprint",
+  "RUNTIME_FINGERPRINT = String(process.env.THREADVAULT_RUNTIME_FINGERPRINT || \"\").trim() || computeAppFingerprint(APP_ROOT)",
+  "PARSER_FINGERPRINT = String(process.env.THREADVAULT_PARSER_FINGERPRINT || \"\").trim() || computeParserFingerprint(APP_ROOT)"
 ]);
 
 assertFileContains("scripts/verify.mjs", [
@@ -2955,7 +3018,9 @@ assertFileContains("docs/technical-design.md", [
   "Export and memory filenames are sanitized, compacted",
   "frontend response parsing guardrails",
   "per-session savepoint",
-  "runtime fingerprint change invalidates cached files"
+  "parser fingerprint covers adapters",
+  "does not call FTS `snippet()`",
+  "`(session_id, ordinal)` message index"
 ]);
 
 assertFileContains("docs/tasks-mvp.md", [
@@ -3106,7 +3171,7 @@ assertFileContains("src/services/indexer.js", [
   "failedSources",
   "sourceErrors: sourceErrors.slice(0, 20)",
   "getSourceScanCache()",
-  "parserVersion: RUNTIME_FINGERPRINT"
+  "parserVersion: PARSER_FINGERPRINT"
 ]);
 
 assertFileContains("src/adapters/index.js", [

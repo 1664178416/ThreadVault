@@ -41,7 +41,7 @@ The browser UI lives in `public/`. The VS Code extension packages a generated co
 ## Data Flow
 
 1. `runFullScan()` loads the local source-file signature cache and calls every source adapter.
-2. Adapters stat candidate files once. Files whose path, size, modification/change time, and runtime fingerprint still match bypass transcript reads and parsing.
+2. Adapters stat candidate files once. Files whose path, size, modification/change time, and parser fingerprint still match bypass transcript reads and parsing.
 3. New, changed, or parser-invalidated files are normalized into sessions with source-level diagnostics.
 4. `upsertImportedSessions()` writes sessions, messages, and successful source signatures in one batch transaction, using a per-session savepoint so one malformed session can roll back without blocking the rest.
 5. The FTS table is refreshed from message content, referenced files, tags, and notes.
@@ -49,7 +49,9 @@ The browser UI lives in `public/`. The VS Code extension packages a generated co
 7. User annotations are saved through `/api/session-meta`.
 8. Markdown export and memory save call `/api/export` and `/api/memory`.
 
-The source cache stores file metadata and the linked session id, not a second transcript copy. A runtime fingerprint change invalidates cached files so parser changes receive one full rescan before incremental scanning resumes. Normalized session fingerprints include source location, state, adapter metadata, and message metadata, preventing a changed file with unchanged visible text from freezing stale session fields into the cache.
+The source cache stores file metadata and the linked session id, not a second transcript copy. Its parser fingerprint covers adapters, parser utilities, and source configuration, so parser changes receive one full rescan before incremental scanning resumes while unrelated UI, HTTP, export, or database changes keep cache hits. Normalized session fingerprints include source location, state, adapter metadata, and message metadata, preventing a changed file with unchanged visible text from freezing stale session fields into the cache.
+
+FTS5 still ranks session-level search documents, but the result list does not call FTS `snippet()` on large concatenated transcripts. ThreadVault builds highlighted previews from already-selected session fields and fetches only the first matching message when needed. Queries made entirely of punctuation use one materialized message-match aggregation instead of repeated correlated scans. The `(session_id, ordinal)` message index also serves transcript reads in display order without a temporary sort.
 
 ## Local Data
 

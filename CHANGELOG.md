@@ -23,3 +23,5 @@
 - Added bundled runtime fingerprints so same-version local VSIX installs refresh the copied extension app when bundled source changes
 - Added persistent incremental source scanning so unchanged transcript files bypass JSON parsing and message reconstruction
 - Batched changed-session imports into one SQLite transaction and bounded multi-row message inserts while retaining per-session savepoint rollback
+- Reduced search latency by avoiding full-transcript FTS snippet generation and aggregating punctuation fallback matches in one message scan
+- Added ordered message indexing for faster large-transcript reads and narrowed source-cache invalidation to parser-relevant code

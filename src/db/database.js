@@ -59,7 +59,8 @@ function createSchema(db) {
       FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
 
-    CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_session_ordinal ON messages(session_id, ordinal);
+    DROP INDEX IF EXISTS idx_messages_session_id;
 
     CREATE TABLE IF NOT EXISTS session_annotations (
       session_id TEXT PRIMARY KEY,
