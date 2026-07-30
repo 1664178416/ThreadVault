@@ -1668,6 +1668,152 @@ function runSessionFingerprintRegression() {
   }
 }
 
+function runSearchSchemaMigrationRegression() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-search-migration-"));
+
+  try {
+    runModuleInput("contentless search migration regression failed", `
+      import path from "node:path";
+      import { DatabaseSync } from "node:sqlite";
+
+      const dbPath = path.join(${JSON.stringify(tempRoot)}, "threadvault.sqlite");
+      const legacy = new DatabaseSync(dbPath);
+      legacy.exec(\`
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL,
+          source_label TEXT NOT NULL,
+          source_session_id TEXT,
+          title TEXT NOT NULL,
+          summary TEXT,
+          workspace_path TEXT,
+          workspace_name TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          status TEXT,
+          resume_type TEXT NOT NULL,
+          fingerprint TEXT NOT NULL,
+          source_path TEXT,
+          parse_confidence REAL,
+          metadata_json TEXT NOT NULL
+        );
+        CREATE TABLE messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          ordinal INTEGER NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          timestamp TEXT,
+          model TEXT,
+          referenced_files_json TEXT NOT NULL,
+          metadata_json TEXT NOT NULL
+        );
+        CREATE TABLE session_annotations (
+          session_id TEXT PRIMARY KEY,
+          favorite INTEGER NOT NULL DEFAULT 0,
+          archived INTEGER NOT NULL DEFAULT 0,
+          tags_json TEXT NOT NULL DEFAULT '[]',
+          note_text TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL
+        );
+        CREATE VIRTUAL TABLE session_search USING fts5(
+          session_id UNINDEXED,
+          title,
+          summary,
+          workspace_name,
+          body
+        );
+        INSERT INTO sessions VALUES (
+          'legacy-search-session', 'codex', 'Codex', 'legacy-search',
+          'Legacy title marker', 'Legacy summary', 'C:/workspace', 'Migration workspace',
+          '2026-07-01T01:00:00.000Z', '2026-07-01T02:00:00.000Z', 'complete',
+          'thread', 'legacy-search-fingerprint', 'C:/history/legacy.jsonl', 1, '{}'
+        );
+        INSERT INTO messages VALUES (
+          'legacy-search-message', 'legacy-search-session', 0, 'user',
+          'alpha migration body marker', '2026-07-01T01:00:00.000Z', 'test-model',
+          '["C:/workspace/[app].js"]', '{}'
+        );
+        INSERT INTO session_annotations VALUES (
+          'legacy-search-session', 0, 0, '["Memory"]', 'local migration note',
+          '2026-07-01T03:00:00.000Z'
+        );
+        INSERT INTO session_search VALUES (
+          'legacy-search-session', 'Legacy title marker', 'Legacy summary local migration note',
+          'Migration workspace Memory',
+          'Codex alpha migration body marker C:/workspace/[app].js Memory local migration note'
+        );
+      \`);
+      legacy.close();
+
+      const { getDatabase } = await import("./src/db/database.js");
+      const { listSessions, updateSessionAnnotation } = await import("./src/db/repository.js");
+      const db = getDatabase();
+      const searchSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'session_search'").get()?.sql || "";
+      if (!searchSchema.includes("content=''") || !searchSchema.includes("contentless_delete=1")) {
+        throw new Error("legacy search table was not migrated: " + searchSchema);
+      }
+      const contentShadow = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'session_search_content'").get();
+      if (contentShadow) {
+        throw new Error("contentless search should not retain a duplicate content shadow table");
+      }
+      const mapping = db.prepare(\`
+        SELECT search_rows.search_rowid AS mappedRowId, session_search.rowid AS searchRowId
+        FROM session_search_rows search_rows
+        JOIN session_search ON session_search.rowid = search_rows.search_rowid
+        WHERE search_rows.session_id = 'legacy-search-session'
+      \`).get();
+      if (!mapping || mapping.mappedRowId !== mapping.searchRowId) {
+        throw new Error("contentless search should use the stable mapping row: " + JSON.stringify(mapping));
+      }
+
+      for (const query of ["alpha", "[app].js", "Memory", "migration note"]) {
+        const result = listSessions({ query });
+        if (result.length !== 1 || result[0].id !== "legacy-search-session" || !result[0].searchSnippet?.includes("<mark>")) {
+          throw new Error("migrated search should preserve query and snippet behavior for " + query + ": " + JSON.stringify(result));
+        }
+      }
+
+      updateSessionAnnotation("legacy-search-session", { noteText: "replacement annotation marker" });
+      const replacement = listSessions({ query: "replacement annotation" });
+      if (replacement.length !== 1 || replacement[0].id !== "legacy-search-session") {
+        throw new Error("contentless search rows should refresh after annotation updates: " + JSON.stringify(replacement));
+      }
+      const searchRows = db.prepare("SELECT COUNT(*) AS count, title FROM session_search").get();
+      if (searchRows.count !== 1 || searchRows.title !== null) {
+        throw new Error("contentless search should keep one index row without stored columns: " + JSON.stringify(searchRows));
+      }
+      db.exec("VACUUM");
+      const afterVacuum = listSessions({ query: "alpha" });
+      if (afterVacuum.length !== 1 || afterVacuum[0].id !== "legacy-search-session") {
+        throw new Error("stable search row mappings should survive VACUUM: " + JSON.stringify(afterVacuum));
+      }
+    `, {
+      THREADVAULT_DATA_DIR: tempRoot,
+      THREADVAULT_RUNTIME_FINGERPRINT: "search-migration-runtime",
+      THREADVAULT_PARSER_FINGERPRINT: "search-migration-parser"
+    });
+
+    runModuleInput("contentless search restart regression failed", `
+      import { listSessions } from "./src/db/repository.js";
+      const result = listSessions({ query: "alpha" });
+      if (result.length !== 1 || result[0].id !== "legacy-search-session") {
+        throw new Error("contentless search should remain readable after restart: " + JSON.stringify(result));
+      }
+    `, {
+      THREADVAULT_DATA_DIR: tempRoot,
+      THREADVAULT_RUNTIME_FINGERPRINT: "search-migration-runtime",
+      THREADVAULT_PARSER_FINGERPRINT: "search-migration-parser"
+    });
+  } finally {
+    const resolved = path.resolve(tempRoot);
+    const temp = path.resolve(os.tmpdir());
+    if (path.basename(resolved).startsWith("threadvault-search-migration-") && resolved.startsWith(temp + path.sep)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
 function runRepositoryEfficiencyRegression() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "threadvault-repository-efficiency-"));
 
@@ -1752,7 +1898,7 @@ function runRepositoryEfficiencyRegression() {
 
         resetTransactionCounts();
         const initial = upsertImportedSessions(sessions);
-        if (initial.importedSessions !== 3 || initial.failedSessions !== 0 || prepareCount !== 9 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1) {
+        if (initial.importedSessions !== 3 || initial.failedSessions !== 0 || prepareCount !== 8 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1) {
           throw new Error("new session batches should reuse statements and one transaction: " + JSON.stringify({ initial, prepareCount, transactionCounts }));
         }
 
@@ -1800,7 +1946,7 @@ function runRepositoryEfficiencyRegression() {
         prepareCount = 0;
         resetTransactionCounts();
         const mixed = upsertImportedSessions([sessions[0], changedCopilot, sessions[2]]);
-        if (mixed.updatedSessions !== 1 || mixed.skippedSessions !== 2 || mixed.failedSessions !== 0 || prepareCount !== 7 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1) {
+        if (mixed.updatedSessions !== 1 || mixed.skippedSessions !== 2 || mixed.failedSessions !== 0 || prepareCount !== 6 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1) {
           throw new Error("mixed batches should reuse write statements after the first change: " + JSON.stringify({ mixed, prepareCount, transactionCounts }));
         }
 
@@ -1827,7 +1973,7 @@ function runRepositoryEfficiencyRegression() {
         prepareCount = 0;
         resetTransactionCounts();
         const recovered = upsertImportedSessions([conflictingSession, changedClaude]);
-        if (recovered.failedSessions !== 1 || recovered.updatedSessions !== 1 || recovered.importedSessions !== 0 || prepareCount !== 7 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1 || transactionCounts.rollbackTo !== 1) {
+        if (recovered.failedSessions !== 1 || recovered.updatedSessions !== 1 || recovered.importedSessions !== 0 || prepareCount !== 6 || transactionCounts.begin !== 1 || transactionCounts.commit !== 1 || transactionCounts.rollbackTo !== 1) {
           throw new Error("prepared statements should remain reusable after a session savepoint rollback: " + JSON.stringify({ recovered, prepareCount, transactionCounts }));
         }
       } finally {
@@ -2118,6 +2264,7 @@ runFileUtilityRegression();
 runCodexArchivedSourceRegression();
 runIncrementalSourceCacheRegression();
 runSessionFingerprintRegression();
+runSearchSchemaMigrationRegression();
 runRepositoryEfficiencyRegression();
 runOpenActionRedactionRegression();
 assertI18nIntegrity();
@@ -2686,7 +2833,17 @@ assertFileContains("src/db/database.js", [
   "SET favorite = 0",
   "WHERE favorite = 1 AND archived = 1",
   "idx_messages_session_ordinal ON messages(session_id, ordinal)",
-  "DROP INDEX IF EXISTS idx_messages_session_id"
+  "DROP INDEX IF EXISTS idx_messages_session_id",
+  "CREATE TABLE IF NOT EXISTS session_search_rows",
+  "search_rowid INTEGER PRIMARY KEY",
+  "CREATE TRIGGER IF NOT EXISTS trg_sessions_search_row",
+  "mapping_version UNINDEXED",
+  "contentless_delete=1",
+  "function rebuildSessionSearch",
+  "DROP TABLE session_search",
+  "INSERT INTO session_search",
+  "db.exec(\"BEGIN IMMEDIATE\")",
+  "db.exec(\"ROLLBACK\")"
 ]);
 
 assertFileContains("extension/extension.js", [
@@ -3019,6 +3176,10 @@ assertFileContains("docs/technical-design.md", [
   "frontend response parsing guardrails",
   "per-session savepoint",
   "parser fingerprint covers adapters",
+  "contentless table stores only the index",
+  "stable `INTEGER PRIMARY KEY` in `session_search_rows`",
+  "survives `VACUUM`",
+  "rebuilt transactionally",
   "does not call FTS `snippet()`",
   "`(session_id, ordinal)` message index"
 ]);
@@ -3039,7 +3200,10 @@ assertFileContains("docs/schema.md", [
   "source_label TEXT NOT NULL",
   "CREATE TABLE IF NOT EXISTS session_annotations",
   "favorite` and `archived` are mutually exclusive",
-  "CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5",
+  "CREATE TABLE IF NOT EXISTS session_search_rows",
+  "CREATE VIRTUAL TABLE session_search USING fts5",
+  "contentless_delete=1",
+  "`session_search.rowid` matches `session_search_rows.search_rowid`",
   "CREATE TABLE IF NOT EXISTS source_scan_cache",
   "bounded multi-row inserts"
 ]);
@@ -3250,6 +3414,8 @@ assertFileContains("src/db/database.js", [
 assertFileContains("src/db/repository.js", [
   "function sourceFileCacheRecord",
   "function upsertSourceFileCache",
+  "INSERT OR REPLACE INTO session_search",
+  "JOIN session_search_rows search_rows ON search_rows.search_rowid = session_search.rowid",
   "session?.scanCacheHit === true",
   "stats.cachedSessions += 1",
   "export function getSourceScanCache"

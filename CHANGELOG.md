@@ -25,3 +25,4 @@
 - Batched changed-session imports into one SQLite transaction and bounded multi-row message inserts while retaining per-session savepoint rollback
 - Reduced search latency by avoiding full-transcript FTS snippet generation and aggregating punctuation fallback matches in one message scan
 - Added ordered message indexing for faster large-transcript reads and narrowed source-cache invalidation to parser-relevant code
+- Converted session search to a transactionally migrated contentless FTS5 index so transcripts are not stored twice

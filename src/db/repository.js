@@ -389,11 +389,13 @@ function upsertSourceFileCache(statement, record) {
 function prepareSearchDocumentStatements(db) {
   return {
     getAnnotation: db.prepare(SESSION_ANNOTATION_QUERY),
-    deleteSearch: db.prepare(`DELETE FROM session_search WHERE session_id = ?`),
-    insertSearch: db.prepare(`
-      INSERT INTO session_search (
-        session_id, title, summary, workspace_name, body
-      ) VALUES (?, ?, ?, ?, ?)
+    upsertSearch: db.prepare(`
+      INSERT OR REPLACE INTO session_search (
+        rowid, title, summary, workspace_name, body
+      )
+      SELECT search_rowid, ?, ?, ?, ?
+      FROM session_search_rows
+      WHERE session_id = ?
     `)
   };
 }
@@ -490,13 +492,12 @@ function replaceSessionMessages(statements, session) {
 function refreshSearchDocumentWithSession(db, session, statements = prepareSearchDocumentStatements(db)) {
   const annotation = getAnnotationForSession(db, session.id, statements.getAnnotation);
 
-  statements.deleteSearch.run(session.id);
-  statements.insertSearch.run(
-    session.id,
+  statements.upsertSearch.run(
     session.title,
     [session.summary || "", annotation.noteText].filter(Boolean).join("\n\n"),
     [session.workspaceName || "", annotation.tags.join(" ")].filter(Boolean).join(" "),
-    buildSearchBody(session, annotation)
+    buildSearchBody(session, annotation),
+    session.id
   );
 }
 
@@ -708,7 +709,8 @@ export function listSessions({
           COALESCE(a.updated_at, '') AS annotationUpdatedAt,
           NULL AS searchSnippet
         FROM session_search
-        JOIN sessions s ON s.id = session_search.session_id
+        JOIN session_search_rows search_rows ON search_rows.search_rowid = session_search.rowid
+        JOIN sessions s ON s.id = search_rows.session_id
         LEFT JOIN session_annotations a ON a.session_id = s.id
         WHERE session_search MATCH ?
         ${archivedClause}

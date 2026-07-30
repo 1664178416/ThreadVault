@@ -136,15 +136,29 @@ Rules:
 
 ### `session_search`
 
+Stable row mapping:
+
 ```sql
-CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
-  session_id UNINDEXED,
+CREATE TABLE IF NOT EXISTS session_search_rows (
+  search_rowid INTEGER PRIMARY KEY,
+  session_id TEXT NOT NULL UNIQUE,
+  FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+```
+
+```sql
+CREATE VIRTUAL TABLE session_search USING fts5(
+  mapping_version UNINDEXED,
   title,
   summary,
   workspace_name,
-  body
+  body,
+  content='',
+  contentless_delete=1
 );
 ```
+
+`session_search.rowid` matches `session_search_rows.search_rowid`, an explicit `INTEGER PRIMARY KEY` that remains stable across `VACUUM`. The contentless table retains the FTS index but does not store a second copy of titles, notes, or complete message bodies. Existing legacy search tables are rebuilt transactionally from `sessions`, `messages`, and `session_annotations` on first startup; released pages remain available for SQLite to reuse.
 
 Search body composition:
 
@@ -161,7 +175,7 @@ Search body composition:
 - Changed sessions share one batch transaction; per-session savepoints preserve failure isolation without paying for one disk commit per session.
 - Message replacements use bounded multi-row inserts to reduce JavaScript-to-SQLite calls during first-time or large rebuilds.
 - Messages for an imported session are replaced during import to reflect the latest parsed source state.
-- Search rows are refreshed after import and after annotation updates.
+- Search rows use contentless `INSERT OR REPLACE` refreshes after import and annotation updates.
 - FTS result previews fetch only the first matching message instead of running `snippet()` across each complete transcript; punctuation-only fallback search aggregates message matches in one pass.
 - Imported sessions are retained when source history disappears; ThreadVault does not delete local records automatically.
 
