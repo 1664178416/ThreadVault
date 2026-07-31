@@ -19,6 +19,7 @@ const MAX_TAG_LENGTH = 64;
 const MAX_TAG_INPUT_LENGTH = 1500;
 const MAX_NOTE_TEXT_LENGTH = 20000;
 const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000;
+const SESSION_MESSAGE_PAGE_SIZE = 200;
 
 const I18N = {
   en: {
@@ -54,6 +55,8 @@ const I18N = {
     librarySnapshot: "Library snapshot",
     libraryTotal: "Library total",
     loadFailed: "Failed to load",
+    loadMore: "Load more",
+    loadingMore: "Loading",
     memoryFailed: "Memory note save failed.",
     memorySaved: "Memory note saved to",
     messages: "messages",
@@ -170,6 +173,8 @@ const I18N = {
     librarySnapshot: "\u8d44\u6599\u5e93\u6982\u89c8",
     libraryTotal: "\u6d88\u606f\u603b\u91cf",
     loadFailed: "\u52a0\u8f7d\u5931\u8d25",
+    loadMore: "\u52a0\u8f7d\u66f4\u591a",
+    loadingMore: "\u52a0\u8f7d\u4e2d",
     memoryFailed: "\u8bb0\u5fc6\u7b14\u8bb0\u4fdd\u5b58\u5931\u8d25\u3002",
     memorySaved: "\u8bb0\u5fc6\u7b14\u8bb0\u5df2\u4fdd\u5b58\u5230",
     messages: "\u6761\u6d88\u606f",
@@ -2036,7 +2041,77 @@ function annotationPanelHtml(tagValue, noteValue) {
   `;
 }
 
-function renderSessionDetail(session) {
+function sessionDetailRequestUrl(sessionId, messageOffset) {
+  const params = new URLSearchParams({
+    messageOffset: String(messageOffset),
+    messageLimit: String(SESSION_MESSAGE_PAGE_SIZE)
+  });
+  return `/api/sessions/${encodeURIComponent(sessionId)}?${params.toString()}`;
+}
+
+function captureSessionDetailViewState() {
+  return {
+    scrollTop: elements.sessionDetail.querySelector(".detail-body")?.scrollTop || 0,
+    tagValue: elements.sessionDetail.querySelector("#tag-input")?.value,
+    noteValue: elements.sessionDetail.querySelector("#note-input")?.value,
+    annotationOpen: Boolean(elements.sessionDetail.querySelector(".annotation-panel")?.open),
+    rawStreamOpen: Boolean(elements.sessionDetail.querySelector(".lazy-process-stream")?.open)
+  };
+}
+
+function restoreSessionDetailViewState(viewState) {
+  if (!viewState) {
+    return;
+  }
+
+  const tagInput = elements.sessionDetail.querySelector("#tag-input");
+  const noteInput = elements.sessionDetail.querySelector("#note-input");
+  const annotationPanel = elements.sessionDetail.querySelector(".annotation-panel");
+  const rawStream = elements.sessionDetail.querySelector(".lazy-process-stream");
+  const detailBody = elements.sessionDetail.querySelector(".detail-body");
+  if (tagInput && typeof viewState.tagValue === "string") {
+    tagInput.value = viewState.tagValue;
+  }
+  if (noteInput && typeof viewState.noteValue === "string") {
+    noteInput.value = viewState.noteValue;
+  }
+  if (annotationPanel) {
+    annotationPanel.open = viewState.annotationOpen;
+  }
+  if (rawStream) {
+    rawStream.open = viewState.rawStreamOpen;
+    if (rawStream.open && rawStream.dataset.loaded !== "1") {
+      rawStream.dispatchEvent(new Event("toggle"));
+    }
+  }
+  if (detailBody) {
+    detailBody.scrollTop = viewState.scrollTop;
+  }
+}
+
+function mergeSessionMessagePage(session, page, expectedOffset) {
+  if (
+    page?.id !== session.id ||
+    !Array.isArray(page.messages) ||
+    page.messagePage?.offset !== expectedOffset ||
+    !Number.isSafeInteger(page.messagePage?.total)
+  ) {
+    throw new Error(t("invalidResponse"));
+  }
+
+  const messagesById = new Map((session.messages || []).map((message) => [message.id, message]));
+  for (const message of page.messages) {
+    messagesById.set(message.id, message);
+  }
+
+  return {
+    ...session,
+    ...page,
+    messages: Array.from(messagesById.values()).sort((left, right) => left.ordinal - right.ordinal)
+  };
+}
+
+function renderSessionDetail(session, viewState = null) {
   delete elements.sessionDetail.dataset.actionBusy;
   const annotation = normalizeAnnotationState(session.annotation);
   const currentStatus = annotationStatus(annotation);
@@ -2046,18 +2121,31 @@ function renderSessionDetail(session) {
   const blocks = buildTranscriptBlocks(session.messages);
   const { secondary } = messageBucket(session.messages);
   const messageHtml = blocks.map(renderTranscriptBlock).join("");
+  const loadedMessageCount = session.messages?.length || 0;
+  const totalMessageCount = Number.isSafeInteger(session.messagePage?.total)
+    ? session.messagePage.total
+    : loadedMessageCount;
   const canOpenWorkspace = Boolean(session.workspacePath);
   const processHtml = secondary.length
     ? `
-      <details class="process-panel">
+      <details class="process-panel lazy-process-stream">
         <summary>
           <span>${iconSlot("process")} ${escapeHtml(t("rawStream"))}</span>
           <span class="process-count">${secondary.length}</span>
         </summary>
-        <div class="process-body">
-          ${secondary.map(renderMessageCard).join("")}
-        </div>
+        <div class="process-body"></div>
       </details>
+    `
+    : "";
+  const paginationHtml = session.messagePage?.hasMore
+    ? `
+      <div class="transcript-pagination">
+        <button class="secondary-button" id="load-more-messages" type="button">
+          ${iconSlot("messages")}
+          <span>${escapeHtml(t("loadMore"))}</span>
+        </button>
+        <div class="inline-status" id="transcript-pagination-status" aria-live="polite"></div>
+      </div>
     `
     : "";
 
@@ -2150,11 +2238,15 @@ function renderSessionDetail(session) {
     <section class="detail-body">
       <div class="transcript-shell">
         <div class="transcript-header">
-          <h3 class="transcript-title">${escapeHtml(t("transcript"))}</h3>
+          <div class="transcript-heading-copy">
+            <h3 class="transcript-title">${escapeHtml(t("transcript"))}</h3>
+            <span class="transcript-progress">${loadedMessageCount} / ${totalMessageCount} ${escapeHtml(t("messages"))}</span>
+          </div>
           ${iconSlot("messages", "hero-source-icon transcript-slot")}
         </div>
         ${messageHtml || `<p class="muted">${escapeHtml(t("noTranscript"))}</p>`}
         ${processHtml}
+        ${paginationHtml}
       </div>
     </section>
   `;
@@ -2218,6 +2310,57 @@ function renderSessionDetail(session) {
       details.dataset.loaded = "1";
     });
   }
+
+  const rawStream = elements.sessionDetail.querySelector(".lazy-process-stream");
+  rawStream?.addEventListener("toggle", () => {
+    if (!rawStream.open || rawStream.dataset.loaded === "1") {
+      return;
+    }
+
+    const body = rawStream.querySelector(".process-body");
+    if (body) {
+      body.innerHTML = secondary.map(renderMessageCard).join("");
+      rawStream.dataset.loaded = "1";
+    }
+  });
+
+  const loadMoreButton = elements.sessionDetail.querySelector("#load-more-messages");
+  loadMoreButton?.addEventListener("click", async () => {
+    const messageOffset = session.messagePage?.nextOffset;
+    if (!Number.isSafeInteger(messageOffset)) {
+      return;
+    }
+
+    const sequence = selectSessionSequence;
+    const label = loadMoreButton.querySelector("span:last-child");
+    const originalLabel = label?.textContent || t("loadMore");
+    loadMoreButton.disabled = true;
+    if (label) {
+      label.textContent = t("loadingMore");
+    }
+
+    try {
+      const page = await requestJson(sessionDetailRequestUrl(session.id, messageOffset));
+      if (sequence !== selectSessionSequence || state.selectedSessionId !== session.id) {
+        return;
+      }
+
+      const nextSession = mergeSessionMessagePage(session, page, messageOffset);
+      const nextViewState = captureSessionDetailViewState();
+      renderSessionDetail(nextSession, nextViewState);
+      restoreFocus(elements.sessionDetail.querySelector("#load-more-messages"));
+    } catch (error) {
+      const status = elements.sessionDetail.querySelector("#transcript-pagination-status");
+      showActionError(error, status);
+    } finally {
+      if (loadMoreButton.isConnected) {
+        loadMoreButton.disabled = false;
+        if (label) {
+          label.textContent = originalLabel;
+        }
+      }
+    }
+  });
 
   elements.sessionDetail.querySelector(".action-group-state")?.addEventListener("keydown", (event) => {
     const keys = ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "Home", "End"];
@@ -2441,6 +2584,8 @@ function renderSessionDetail(session) {
       }
     }
   };
+
+  restoreSessionDetailViewState(viewState);
 }
 
 function currentListStateLabel() {
@@ -2595,7 +2740,7 @@ async function selectSession(sessionId, rerenderList = true, syncUrl = true) {
     renderSessionList();
   }
 
-  const session = await requestJson(`/api/sessions/${encodeURIComponent(normalizedSessionId)}`);
+  const session = await requestJson(sessionDetailRequestUrl(normalizedSessionId, 0));
   if (sequence !== selectSessionSequence || state.selectedSessionId !== normalizedSessionId) {
     return;
   }

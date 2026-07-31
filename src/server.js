@@ -15,6 +15,7 @@ ensureDir(DATA_DIR);
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_SESSION_ID_LENGTH = 512;
 const MAX_SOURCE_ID_LENGTH = 128;
+const MAX_MESSAGE_PAGE_SIZE = 500;
 const LOOPBACK_WRITE_HOSTS = ["127.0.0.1", "localhost", "::1"];
 
 function urlHost(host) {
@@ -116,6 +117,36 @@ function normalizeSourceId(value) {
   }
 
   return sourceId;
+}
+
+function messagePageFromSearchParams(searchParams) {
+  const hasOffset = searchParams.has("messageOffset");
+  const hasLimit = searchParams.has("messageLimit");
+  if (!hasOffset && !hasLimit) {
+    return undefined;
+  }
+  if (!hasOffset || !hasLimit) {
+    return null;
+  }
+
+  const offsetValue = searchParams.get("messageOffset") || "";
+  const limitValue = searchParams.get("messageLimit") || "";
+  if (!/^\d+$/.test(offsetValue) || !/^\d+$/.test(limitValue)) {
+    return null;
+  }
+
+  const messageOffset = Number(offsetValue);
+  const messageLimit = Number(limitValue);
+  if (
+    !Number.isSafeInteger(messageOffset) ||
+    !Number.isSafeInteger(messageLimit) ||
+    messageLimit < 1 ||
+    messageLimit > MAX_MESSAGE_PAGE_SIZE
+  ) {
+    return null;
+  }
+
+  return { messageOffset, messageLimit };
 }
 
 function decodePathComponent(value) {
@@ -375,7 +406,16 @@ function handleApi(request, response, url) {
       return;
     }
 
-    const session = getSessionById(sessionId);
+    const messagePage = messagePageFromSearchParams(url.searchParams);
+    if (messagePage === null) {
+      sendJson(request, response, 400, {
+        ok: false,
+        error: "Invalid message page."
+      });
+      return;
+    }
+
+    const session = getSessionById(sessionId, messagePage);
     if (!session) {
       sendJson(request, response, 404, {
         ok: false,

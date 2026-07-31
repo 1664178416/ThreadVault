@@ -103,9 +103,11 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_ordinal ON messages(session_id, 
 Notes:
 
 - `ordinal` preserves transcript order.
-- The composite index serves session lookups in transcript order without a temporary sort.
+- The composite index serves full and paged session lookups in transcript order without a temporary sort.
 - `role` is normalized to user, assistant, system, tool, or source-specific fallback values.
 - Referenced files are stored as JSON for simple rendering and search refresh.
+
+The browser reads messages in 200-row pages through the session-detail API. Page totals use the same `session_id` prefix of the composite index. Calls without page parameters still return the complete transcript for exports and other internal operations.
 
 ### `session_annotations`
 

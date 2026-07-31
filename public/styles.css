@@ -1698,10 +1698,36 @@ body.embed-mode .topbar-browser-button {
   gap: 16px;
 }
 
+.transcript-heading-copy {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
 .transcript-title {
   margin: 0;
   font-size: 15px;
   font-weight: 800;
+}
+
+.transcript-progress {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.transcript-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.transcript-pagination .inline-status {
+  margin-top: 0;
 }
 
 .message-card {
@@ -2262,12 +2288,24 @@ body.embed-mode.embed-compact .session-list {
   }
 
   .action-cluster {
+    flex: none;
     width: 100%;
+  }
+
+  .action-group-open,
+  .action-group-output {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .action-group-open .action-button,
   .action-group-output .action-button {
-    flex-basis: 138px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .action-group-output .action-button:last-child {
+    grid-column: 1 / -1;
   }
 
   .detail-status-stack {

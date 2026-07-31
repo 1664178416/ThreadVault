@@ -902,16 +902,16 @@ function runServerHttpRegression() {
         sourcePath: "C:/history/http-regular.jsonl",
         parseConfidence: 1,
         metadata: {},
-        messages: [{
-          id: "http-regular-message",
-          ordinal: 0,
-          role: "user",
-          content: "regular",
+        messages: Array.from({ length: 3 }, (_, ordinal) => ({
+          id: "http-regular-message-" + ordinal,
+          ordinal,
+          role: ordinal === 0 ? "user" : "assistant",
+          content: "regular " + ordinal,
           timestamp: "2026-06-10T01:00:00.000Z",
-          model: null,
+          model: ordinal === 0 ? null : "test-model",
           referencedFiles: [],
           metadata: {}
-        }]
+        }))
       };
       const hiddenSession = {
         ...regularSession,
@@ -1049,6 +1049,35 @@ function runServerHttpRegression() {
         const blankSessionId = await request("/api/sessions/%20%20");
         if (blankSessionId.status !== 400 || !blankSessionId.body.includes("Invalid session id encoding")) {
           throw new Error("blank session id should return 400, got " + blankSessionId.status + " " + blankSessionId.body);
+        }
+
+        const fullDetail = await request("/api/sessions/" + regularSession.id);
+        const fullDetailPayload = JSON.parse(fullDetail.body);
+        if (fullDetail.status !== 200 || fullDetailPayload.messages?.length !== 3 || Object.hasOwn(fullDetailPayload, "messagePage")) {
+          throw new Error("session detail without paging parameters should keep the full response contract: " + fullDetail.body);
+        }
+
+        const pagedDetail = await request("/api/sessions/" + regularSession.id + "?messageOffset=1&messageLimit=1");
+        const pagedDetailPayload = JSON.parse(pagedDetail.body);
+        if (
+          pagedDetail.status !== 200 ||
+          pagedDetailPayload.messages?.length !== 1 ||
+          pagedDetailPayload.messages[0]?.ordinal !== 1 ||
+          JSON.stringify(pagedDetailPayload.messagePage) !== JSON.stringify({ offset: 1, limit: 1, returned: 1, total: 3, hasMore: true, nextOffset: 2 })
+        ) {
+          throw new Error("paged session detail should return one bounded message page: " + pagedDetail.body);
+        }
+
+        for (const invalidPagePath of [
+          "/api/sessions/" + regularSession.id + "?messageOffset=0",
+          "/api/sessions/" + regularSession.id + "?messageLimit=1",
+          "/api/sessions/" + regularSession.id + "?messageOffset=-1&messageLimit=1",
+          "/api/sessions/" + regularSession.id + "?messageOffset=0&messageLimit=501"
+        ]) {
+          const invalidPage = await request(invalidPagePath);
+          if (invalidPage.status !== 400 || !invalidPage.body.includes("Invalid message page.")) {
+            throw new Error("invalid message page should return 400, got " + invalidPage.status + " " + invalidPage.body);
+          }
         }
 
         const health = await request("/api/health");
@@ -1820,7 +1849,7 @@ function runRepositoryEfficiencyRegression() {
   try {
     runModuleInput("repository efficiency regression failed", `
       import { getDatabase } from "./src/db/database.js";
-      import { getSourceScanCache, getStats, updateSessionAnnotation, upsertImportedSessions } from "./src/db/repository.js";
+      import { getSessionDetail, getSourceScanCache, getStats, updateSessionAnnotation, upsertImportedSessions } from "./src/db/repository.js";
       import { fileCacheKey } from "./src/utils/fs.js";
 
       function session(id, sourceId, updatedAt) {
@@ -1979,6 +2008,32 @@ function runRepositoryEfficiencyRegression() {
       } finally {
         db.prepare = originalPrepare;
         db.exec = originalExec;
+      }
+
+      const fullDetail = getSessionDetail(sessions[0].id);
+      if (fullDetail.messages.length !== 205 || Object.hasOwn(fullDetail, "messagePage")) {
+        throw new Error("unpaged repository detail should keep returning every message");
+      }
+
+      const middlePage = getSessionDetail(sessions[0].id, { messageOffset: 100, messageLimit: 100 });
+      if (
+        middlePage.messages.length !== 100 ||
+        middlePage.messages[0]?.ordinal !== 100 ||
+        middlePage.messages[99]?.ordinal !== 199 ||
+        JSON.stringify(middlePage.messagePage) !== JSON.stringify({ offset: 100, limit: 100, returned: 100, total: 205, hasMore: true, nextOffset: 200 })
+      ) {
+        throw new Error("repository detail should return a stable middle message page: " + JSON.stringify(middlePage.messagePage));
+      }
+
+      const tailPage = getSessionDetail(sessions[0].id, { messageOffset: 200, messageLimit: 100 });
+      if (
+        tailPage.messages.length !== 5 ||
+        tailPage.messages[0]?.ordinal !== 200 ||
+        tailPage.messagePage?.total !== 205 ||
+        tailPage.messagePage?.hasMore !== false ||
+        tailPage.messagePage?.nextOffset !== null
+      ) {
+        throw new Error("repository detail should terminate on the final message page: " + JSON.stringify(tailPage.messagePage));
       }
 
       const sourceCache = getSourceScanCache();
@@ -2550,6 +2605,7 @@ assertFileContains("public/app.js", [
   "const MAX_TAG_INPUT_LENGTH = 1500",
   "const MAX_NOTE_TEXT_LENGTH = 20000",
   "const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000",
+  "const SESSION_MESSAGE_PAGE_SIZE = 200",
   "maxlength=\"${MAX_TAG_INPUT_LENGTH}\"",
   "maxlength=\"${MAX_NOTE_TEXT_LENGTH}\"",
   "invalidResponse",
@@ -2589,6 +2645,17 @@ assertFileContains("public/app.js", [
   "readLocalStorage(LAYOUT.storageKey)",
   "writeLocalStorage(LAYOUT.storageKey",
   "let selectSessionSequence = 0",
+  "function sessionDetailRequestUrl",
+  "messageOffset: String(messageOffset)",
+  "messageLimit: String(SESSION_MESSAGE_PAGE_SIZE)",
+  "function captureSessionDetailViewState",
+  "function restoreSessionDetailViewState",
+  "function mergeSessionMessagePage",
+  "id=\"load-more-messages\"",
+  "page.messagePage?.offset !== expectedOffset",
+  "rawStream.dataset.loaded === \"1\"",
+  "renderSessionDetail(nextSession, nextViewState)",
+  "restoreFocus(elements.sessionDetail.querySelector(\"#load-more-messages\"))",
   "let leaving = false",
   "let autoDismissId = 0",
   "if (leaving)",
@@ -2776,11 +2843,24 @@ assertFileContains("public/index.html", [
   "title=\"Drag or use arrow keys to resize the session library\""
 ]);
 
+assertFileContains("public/styles.css", [
+  ".transcript-progress",
+  ".transcript-pagination",
+  "grid-template-columns: repeat(2, minmax(0, 1fr))",
+  ".action-group-output .action-button:last-child",
+  "grid-column: 1 / -1"
+]);
+
 assertFileContains("src/db/repository.js", [
   "const MAX_TAGS = 20",
   "const MAX_TAG_LENGTH = 64",
   "const MAX_NOTE_TEXT_LENGTH = 20000",
   "const MAX_SOURCE_ID_LENGTH = 128",
+  "const MAX_MESSAGE_PAGE_SIZE = 500",
+  "function normalizeMessagePage",
+  "LIMIT ? OFFSET ?",
+  "SELECT COUNT(*) AS count FROM messages WHERE session_id = ?",
+  "nextOffset: hasMore ? nextOffset : null",
   "function normalizeQuery",
   "function escapeLikeQuery",
   "function normalizeLimit",
@@ -2994,8 +3074,13 @@ assertFileContains("src/server.js", [
   "function urlHost",
   "const MAX_SESSION_ID_LENGTH = 512",
   "const MAX_SOURCE_ID_LENGTH = 128",
+  "const MAX_MESSAGE_PAGE_SIZE = 500",
   "function normalizeSessionId",
   "function normalizeSourceId",
+  "function messagePageFromSearchParams",
+  "searchParams.has(\"messageOffset\")",
+  "searchParams.has(\"messageLimit\")",
+  "error: \"Invalid message page.\"",
   "function sessionIdFromPayload",
   "function decodePathComponent",
   "Invalid session id encoding.",

@@ -8,6 +8,7 @@ const MAX_NOTE_TEXT_LENGTH = 20000;
 const MAX_SOURCE_ID_LENGTH = 128;
 const MAX_PARSER_VERSION_LENGTH = 256;
 const MESSAGE_INSERT_BATCH_SIZE = 100;
+const MAX_MESSAGE_PAGE_SIZE = 500;
 
 const SESSION_ANNOTATION_QUERY = `
   SELECT
@@ -23,6 +24,57 @@ const SESSION_ANNOTATION_QUERY = `
 
 function json(value) {
   return JSON.stringify(value ?? {});
+}
+
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function deserializeMessageRow(row) {
+  return {
+    id: row.id,
+    ordinal: row.ordinal,
+    role: row.role,
+    content: row.content,
+    timestamp: row.timestamp,
+    model: row.model,
+    referencedFiles: parseJsonArray(row.referencedFilesJson),
+    metadata: parseJsonObject(row.metadataJson)
+  };
+}
+
+function normalizeMessagePage(options) {
+  if (options?.messageLimit === undefined) {
+    return null;
+  }
+
+  const messageOffset = options.messageOffset ?? 0;
+  const messageLimit = options.messageLimit;
+  if (
+    !Number.isSafeInteger(messageOffset) ||
+    messageOffset < 0 ||
+    !Number.isSafeInteger(messageLimit) ||
+    messageLimit < 1 ||
+    messageLimit > MAX_MESSAGE_PAGE_SIZE
+  ) {
+    throw new RangeError("Invalid message page.");
+  }
+
+  return { messageOffset, messageLimit };
 }
 
 function nowIso() {
@@ -840,8 +892,9 @@ export function listSessions({
   return statement.all(...params).map(deserializeSessionRow);
 }
 
-export function getSessionDetail(sessionId) {
+export function getSessionDetail(sessionId, options = {}) {
   const db = getDatabase();
+  const messagePage = normalizeMessagePage(options);
   const sessionStatement = db.prepare(`
     SELECT
       sessions.id,
@@ -881,6 +934,7 @@ export function getSessionDetail(sessionId) {
     FROM messages
     WHERE session_id = ?
     ORDER BY ordinal ASC
+    ${messagePage ? "LIMIT ? OFFSET ?" : ""}
   `);
 
   const session = sessionStatement.get(sessionId);
@@ -888,35 +942,32 @@ export function getSessionDetail(sessionId) {
     return null;
   }
 
-  const parseArray = (value) => {
-    try {
-      const parsed = JSON.parse(value || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-  const parseObject = (value) => {
-    try {
-      const parsed = JSON.parse(value || "{}");
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
+  const messages = (messagePage
+    ? messageStatement.all(sessionId, messagePage.messageLimit, messagePage.messageOffset)
+    : messageStatement.all(sessionId))
+    .map(deserializeMessageRow);
+  const detail = {
+    ...deserializeSessionRow(session),
+    messages
   };
 
+  if (!messagePage) {
+    return detail;
+  }
+
+  const total = db.prepare("SELECT COUNT(*) AS count FROM messages WHERE session_id = ?").get(sessionId).count;
+  const nextOffset = messagePage.messageOffset + messages.length;
+  const hasMore = nextOffset < total;
   return {
-    ...deserializeSessionRow(session),
-    messages: messageStatement.all(sessionId).map((row) => ({
-      id: row.id,
-      ordinal: row.ordinal,
-      role: row.role,
-      content: row.content,
-      timestamp: row.timestamp,
-      model: row.model,
-      referencedFiles: parseArray(row.referencedFilesJson),
-      metadata: parseObject(row.metadataJson)
-    }))
+    ...detail,
+    messagePage: {
+      offset: messagePage.messageOffset,
+      limit: messagePage.messageLimit,
+      returned: messages.length,
+      total,
+      hasMore,
+      nextOffset: hasMore ? nextOffset : null
+    }
   };
 }
 

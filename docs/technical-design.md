@@ -45,13 +45,15 @@ The browser UI lives in `public/`. The VS Code extension packages a generated co
 3. New, changed, or parser-invalidated files are normalized into sessions with source-level diagnostics.
 4. `upsertImportedSessions()` writes sessions, messages, and successful source signatures in one batch transaction, using a per-session savepoint so one malformed session can roll back without blocking the rest.
 5. The FTS table is refreshed from message content, referenced files, tags, and notes.
-6. The UI queries `/api/sessions` and `/api/sessions/:id`.
+6. The UI queries `/api/sessions` and requests `/api/sessions/:id` in 200-message pages.
 7. User annotations are saved through `/api/session-meta`.
 8. Markdown export and memory save call `/api/export` and `/api/memory`.
 
 The source cache stores file metadata and the linked session id, not a second transcript copy. Its parser fingerprint covers adapters, parser utilities, and source configuration, so parser changes receive one full rescan before incremental scanning resumes while unrelated UI, HTTP, export, or database changes keep cache hits. Normalized session fingerprints include source location, state, adapter metadata, and message metadata, preventing a changed file with unchanged visible text from freezing stale session fields into the cache.
 
 FTS5 still ranks session-level search documents, but its contentless table stores only the index and maps each search row through a stable `INTEGER PRIMARY KEY` in `session_search_rows`; it no longer duplicates complete transcripts in an FTS content shadow table. The explicit mapping survives `VACUUM`, and legacy search tables are rebuilt transactionally from normalized tables on first startup. The result list does not call FTS `snippet()` on large concatenated transcripts: ThreadVault builds highlighted previews from already-selected session fields and fetches only the first matching message when needed. Queries made entirely of punctuation use one materialized message-match aggregation instead of repeated correlated scans. The `(session_id, ordinal)` message index also serves transcript reads in display order without a temporary sort.
+
+The dashboard initially requests 200 messages and loads later pages on demand, so opening a very large transcript does not transfer or render the complete history. The detail endpoint keeps its original full-session response when pagination parameters are omitted for internal callers such as Markdown export, memory notes, and open actions. A paged request must provide both `messageOffset` and `messageLimit`; limits are capped at 500 and responses include total, continuation, and completion metadata.
 
 ## Local Data
 
@@ -105,6 +107,7 @@ When installed from VSIX or Marketplace, the extension copies the bundled app in
 - Incremental source cache hits, file/parser invalidation, upgrade backfill, and rollback behavior
 - CORS/write-origin behavior
 - Real HTTP behavior for root page, security headers, path traversal, health diagnostics, cross-origin writes, and oversized request bodies
+- Full and paged session-detail contracts, message-page validation, and repository page boundaries
 - Error redaction, open-target shape checks, bounded Markdown filenames, and frontend response parsing guardrails
 
 Before packaging or publishing:

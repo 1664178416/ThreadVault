@@ -26,3 +26,5 @@
 - Reduced search latency by avoiding full-transcript FTS snippet generation and aggregating punctuation fallback matches in one message scan
 - Added ordered message indexing for faster large-transcript reads and narrowed source-cache invalidation to parser-relevant code
 - Converted session search to a transactionally migrated contentless FTS5 index so transcripts are not stored twice
+- Paginated dashboard transcript loading in 200-message chunks while preserving the full-detail contract for exports and internal actions
+- Deferred duplicate raw-process rendering until expansion and preserved scroll position plus annotation drafts while loading more messages

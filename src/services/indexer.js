@@ -42,8 +42,8 @@ export function getDashboardData(query = "", filters = {}) {
   };
 }
 
-export function getSessionById(sessionId) {
-  return getSessionDetail(sessionId);
+export function getSessionById(sessionId, options) {
+  return getSessionDetail(sessionId, options);
 }
 
 export function saveSessionAnnotation(sessionId, updates) {
