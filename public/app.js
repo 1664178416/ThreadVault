@@ -19,6 +19,7 @@ const MAX_TAG_LENGTH = 64;
 const MAX_TAG_INPUT_LENGTH = 1500;
 const MAX_NOTE_TEXT_LENGTH = 20000;
 const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000;
+const SESSION_LIST_PAGE_SIZE = 100;
 const SESSION_MESSAGE_PAGE_SIZE = 200;
 
 const I18N = {
@@ -56,6 +57,7 @@ const I18N = {
     libraryTotal: "Library total",
     loadFailed: "Failed to load",
     loadMore: "Load more",
+    loadMoreSessions: "Load more sessions",
     loadingMore: "Loading",
     memoryFailed: "Memory note save failed.",
     memorySaved: "Memory note saved to",
@@ -174,6 +176,7 @@ const I18N = {
     libraryTotal: "\u6d88\u606f\u603b\u91cf",
     loadFailed: "\u52a0\u8f7d\u5931\u8d25",
     loadMore: "\u52a0\u8f7d\u66f4\u591a",
+    loadMoreSessions: "\u52a0\u8f7d\u66f4\u591a\u4f1a\u8bdd",
     loadingMore: "\u52a0\u8f7d\u4e2d",
     memoryFailed: "\u8bb0\u5fc6\u7b14\u8bb0\u4fdd\u5b58\u5931\u8d25\u3002",
     memorySaved: "\u8bb0\u5fc6\u7b14\u8bb0\u5df2\u4fdd\u5b58\u5230",
@@ -296,6 +299,7 @@ function loadSavedSettings() {
 
 const state = {
   sessions: [],
+  sessionPage: null,
   selectedSessionId: null,
   query: "",
   sourceFilter: "",
@@ -1943,7 +1947,7 @@ function renderStats(stats) {
 }
 
 function renderSessionList() {
-  elements.sessionCount.textContent = String(state.sessions.length);
+  elements.sessionCount.textContent = `${state.sessions.length}${state.sessionPage?.hasMore ? "+" : ""}`;
   const stateLabel = currentListStateLabel();
 
   if (elements.listState) {
@@ -1966,7 +1970,7 @@ function renderSessionList() {
     return;
   }
 
-  elements.sessionList.innerHTML = state.sessions.map((session) => {
+  const sessionHtml = state.sessions.map((session) => {
     const annotation = normalizeAnnotationState(session.annotation);
     const isActive = session.id === state.selectedSessionId;
     const activeClass = isActive ? "active" : "";
@@ -1995,6 +1999,19 @@ function renderSessionList() {
       </article>
     `;
   }).join("");
+  const paginationHtml = state.sessionPage?.hasMore
+    ? `
+      <div class="session-pagination">
+        <button class="secondary-button" id="load-more-sessions" type="button">
+          ${iconSlot("sessions")}
+          <span>${escapeHtml(t("loadMoreSessions"))}</span>
+        </button>
+        <div class="inline-status" id="session-pagination-status" aria-live="polite"></div>
+      </div>
+    `
+    : "";
+
+  elements.sessionList.innerHTML = `${sessionHtml}${paginationHtml}`;
 
   const openSessionItem = (node) => {
     const sessionId = node.getAttribute("data-session-id");
@@ -2015,6 +2032,30 @@ function renderSessionList() {
       }
     });
   }
+
+  const loadMoreButton = elements.sessionList.querySelector("#load-more-sessions");
+  loadMoreButton?.addEventListener("click", async () => {
+    const label = loadMoreButton.querySelector("span:last-child");
+    const originalLabel = label?.textContent || t("loadMoreSessions");
+    loadMoreButton.disabled = true;
+    if (label) {
+      label.textContent = t("loadingMore");
+    }
+
+    try {
+      await loadSessions({ append: true });
+    } catch (error) {
+      const status = elements.sessionList.querySelector("#session-pagination-status");
+      showActionError(error, status);
+    } finally {
+      if (loadMoreButton.isConnected) {
+        loadMoreButton.disabled = false;
+        if (label) {
+          label.textContent = originalLabel;
+        }
+      }
+    }
+  });
 }
 
 function annotationPanelHtml(tagValue, noteValue) {
@@ -2622,8 +2663,13 @@ function renderNoSessionSelected() {
   `;
 }
 
-async function loadSessions() {
+async function loadSessions({ append = false } = {}) {
   const sequence = ++loadSequence;
+  const sessionOffset = append ? state.sessionPage?.nextOffset : 0;
+  if (!Number.isSafeInteger(sessionOffset)) {
+    return;
+  }
+
   const params = new URLSearchParams();
   const normalizedQuery = normalizeSearchQuery(state.query);
   state.query = normalizedQuery;
@@ -2642,6 +2688,8 @@ async function loadSessions() {
   } else if (state.includeArchived) {
     params.set("includeArchived", "1");
   }
+  params.set("sessionOffset", String(sessionOffset));
+  params.set("sessionLimit", String(SESSION_LIST_PAGE_SIZE));
   const query = params.toString() ? `?${params.toString()}` : "";
 
   const payload = await requestJson(`/api/sessions${query}`);
@@ -2649,7 +2697,34 @@ async function loadSessions() {
     return;
   }
 
-  state.sessions = filterSessionsForCurrentStatusView(payload.sessions || []);
+  if (
+    !payload.sessionPage ||
+    payload.sessionPage.offset !== sessionOffset ||
+    payload.sessionPage.limit !== SESSION_LIST_PAGE_SIZE
+  ) {
+    throw new Error(t("invalidResponse"));
+  }
+
+  const pageSessions = filterSessionsForCurrentStatusView(payload.sessions || []);
+  if (append) {
+    const scrollTop = elements.sessionList.scrollTop;
+    const sessionsById = new Map(state.sessions.map((session) => [session.id, session]));
+    for (const session of pageSessions) {
+      sessionsById.set(session.id, session);
+    }
+    state.sessions = Array.from(sessionsById.values());
+    state.sessionPage = payload.sessionPage;
+    renderStats(payload.stats || {});
+    renderSessionList();
+    elements.sessionList.scrollTop = scrollTop;
+    const nextFocus = elements.sessionList.querySelector("#load-more-sessions") ||
+      Array.from(elements.sessionList.querySelectorAll(".session-item")).at(-1);
+    restoreFocus(nextFocus);
+    return;
+  }
+
+  state.sessions = pageSessions;
+  state.sessionPage = payload.sessionPage;
   renderStats(payload.stats || {});
 
   const urlSessionId = sessionIdFromUrl();

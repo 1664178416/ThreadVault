@@ -1115,6 +1115,21 @@ body.is-resizing-drawer {
     box-shadow 140ms ease;
 }
 
+.session-pagination {
+  display: grid;
+  justify-items: stretch;
+  gap: 4px;
+  padding: 6px 0 2px;
+}
+
+.session-pagination .secondary-button {
+  width: 100%;
+}
+
+.session-pagination .inline-status {
+  margin-top: 0;
+}
+
 .session-item:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.58);

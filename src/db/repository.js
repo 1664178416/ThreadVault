@@ -146,6 +146,11 @@ function normalizeLimit(value, fallback = 200, maximum = 500) {
   return Math.min(limit, maximum);
 }
 
+function normalizeOffset(value) {
+  const offset = Number(value || 0);
+  return Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
+}
+
 function normalizeSourceId(value) {
   if (typeof value !== "string") {
     return "";
@@ -708,6 +713,7 @@ export function getSourceScanCache() {
 export function listSessions({
   query = "",
   limit = 200,
+  offset = 0,
   favoritesOnly = false,
   includeArchived = false,
   archivedOnly = false,
@@ -716,6 +722,7 @@ export function listSessions({
   const db = getDatabase();
   const normalizedQuery = normalizeQuery(query);
   const normalizedLimit = normalizeLimit(limit);
+  const normalizedOffset = normalizeOffset(offset);
   const normalizedSourceId = normalizeSourceId(sourceId);
   if (normalizedSourceId === null) {
     return [];
@@ -768,14 +775,17 @@ export function listSessions({
         ${archivedClause}
         ${favoriteClause}
         ${sourceClauseFts}
-        ORDER BY rank
-        LIMIT ?
+        ORDER BY rank, s.id ASC
+        LIMIT ? OFFSET ?
       `);
-      const params = normalizedSourceId ? [ftsQuery, normalizedSourceId, normalizedLimit] : [ftsQuery, normalizedLimit];
+      const params = normalizedSourceId
+        ? [ftsQuery, normalizedSourceId, normalizedLimit, normalizedOffset]
+        : [ftsQuery, normalizedLimit, normalizedOffset];
       return hydrateFtsSearchSnippets(db, statement.all(...params), normalizedQuery).map(deserializeSessionRow);
     } catch {
       const sourceClauseFallback = normalizedSourceId ? "AND sessions.source_id = ?2" : "";
       const limitPlaceholder = normalizedSourceId ? "?3" : "?2";
+      const offsetPlaceholder = normalizedSourceId ? "?4" : "?3";
       const fallback = db.prepare(`
         WITH message_matches AS MATERIALIZED (
           SELECT
@@ -842,13 +852,13 @@ export function listSessions({
         ${archivedClause}
         ${favoriteClause}
         ${sourceClauseFallback}
-        ORDER BY fallbackRank DESC, COALESCE(sessions.updated_at, sessions.created_at) DESC
-        LIMIT ${limitPlaceholder}
+        ORDER BY fallbackRank DESC, COALESCE(sessions.updated_at, sessions.created_at) DESC, sessions.id ASC
+        LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
       `);
       const likeQuery = escapeLikeQuery(normalizedQuery);
       const params = normalizedSourceId
-        ? [likeQuery, normalizedSourceId, normalizedLimit]
-        : [likeQuery, normalizedLimit];
+        ? [likeQuery, normalizedSourceId, normalizedLimit, normalizedOffset]
+        : [likeQuery, normalizedLimit, normalizedOffset];
       return fallback.all(...params).map((row) => deserializeSessionRow({
         ...row,
         searchSnippet: buildFallbackSearchSnippet(row, normalizedQuery)
@@ -884,11 +894,13 @@ export function listSessions({
     ${archivedClause}
     ${favoriteClause}
     ${sourceClausePlain}
-    ORDER BY COALESCE(sessions.updated_at, sessions.created_at) DESC
-    LIMIT ?
+    ORDER BY COALESCE(sessions.updated_at, sessions.created_at) DESC, sessions.id ASC
+    LIMIT ? OFFSET ?
   `);
 
-  const params = normalizedSourceId ? [normalizedSourceId, normalizedLimit] : [normalizedLimit];
+  const params = normalizedSourceId
+    ? [normalizedSourceId, normalizedLimit, normalizedOffset]
+    : [normalizedLimit, normalizedOffset];
   return statement.all(...params).map(deserializeSessionRow);
 }
 

@@ -1097,6 +1097,46 @@ function runServerHttpRegression() {
           throw new Error("HEAD health should keep JSON content type");
         }
 
+        const unpagedSessions = await request("/api/sessions");
+        const unpagedSessionsPayload = JSON.parse(unpagedSessions.body);
+        if (unpagedSessions.status !== 200 || unpagedSessionsPayload.sessions?.length !== 1 || Object.hasOwn(unpagedSessionsPayload, "sessionPage")) {
+          throw new Error("session list without paging parameters should keep the existing response contract: " + unpagedSessions.body);
+        }
+
+        const firstSessionPage = await request("/api/sessions?includeArchived=1&sessionOffset=0&sessionLimit=1");
+        const firstSessionPagePayload = JSON.parse(firstSessionPage.body);
+        if (
+          firstSessionPage.status !== 200 ||
+          firstSessionPagePayload.sessions?.length !== 1 ||
+          firstSessionPagePayload.sessions[0]?.id !== hiddenSession.id ||
+          JSON.stringify(firstSessionPagePayload.sessionPage) !== JSON.stringify({ offset: 0, limit: 1, returned: 1, hasMore: true, nextOffset: 1 })
+        ) {
+          throw new Error("first session page should expose a stable continuation: " + firstSessionPage.body);
+        }
+
+        const secondSessionPage = await request("/api/sessions?includeArchived=1&sessionOffset=1&sessionLimit=1");
+        const secondSessionPagePayload = JSON.parse(secondSessionPage.body);
+        if (
+          secondSessionPage.status !== 200 ||
+          secondSessionPagePayload.sessions?.length !== 1 ||
+          secondSessionPagePayload.sessions[0]?.id !== regularSession.id ||
+          JSON.stringify(secondSessionPagePayload.sessionPage) !== JSON.stringify({ offset: 1, limit: 1, returned: 1, hasMore: false, nextOffset: null })
+        ) {
+          throw new Error("final session page should terminate cleanly: " + secondSessionPage.body);
+        }
+
+        for (const invalidSessionPagePath of [
+          "/api/sessions?sessionOffset=0",
+          "/api/sessions?sessionLimit=1",
+          "/api/sessions?sessionOffset=-1&sessionLimit=1",
+          "/api/sessions?sessionOffset=0&sessionLimit=301"
+        ]) {
+          const invalidSessionPage = await request(invalidSessionPagePath);
+          if (invalidSessionPage.status !== 400 || !invalidSessionPage.body.includes("Invalid session page.")) {
+            throw new Error("invalid session page should return 400, got " + invalidSessionPage.status + " " + invalidSessionPage.body);
+          }
+        }
+
         const archivedOnly = await request("/api/sessions?archivedOnly=1");
         if (archivedOnly.status !== 200) {
           throw new Error("archivedOnly sessions should return 200, got " + archivedOnly.status);
@@ -1849,7 +1889,7 @@ function runRepositoryEfficiencyRegression() {
   try {
     runModuleInput("repository efficiency regression failed", `
       import { getDatabase } from "./src/db/database.js";
-      import { getSessionDetail, getSourceScanCache, getStats, updateSessionAnnotation, upsertImportedSessions } from "./src/db/repository.js";
+      import { getSessionDetail, getSourceScanCache, getStats, listSessions, updateSessionAnnotation, upsertImportedSessions } from "./src/db/repository.js";
       import { fileCacheKey } from "./src/utils/fs.js";
 
       function session(id, sourceId, updatedAt) {
@@ -2034,6 +2074,22 @@ function runRepositoryEfficiencyRegression() {
         tailPage.messagePage?.nextOffset !== null
       ) {
         throw new Error("repository detail should terminate on the final message page: " + JSON.stringify(tailPage.messagePage));
+      }
+
+      const firstSessionPage = listSessions({ limit: 2, offset: 0 });
+      const secondSessionPage = listSessions({ limit: 2, offset: 2 });
+      if (
+        JSON.stringify(firstSessionPage.map((session) => session.id)) !== JSON.stringify(["efficiency-claude", "efficiency-codex"]) ||
+        JSON.stringify(secondSessionPage.map((session) => session.id)) !== JSON.stringify(["efficiency-copilot"])
+      ) {
+        throw new Error("repository session pages should preserve stable updated-time ordering: " + JSON.stringify({ firstSessionPage, secondSessionPage }));
+      }
+
+      const firstSearchPage = listSessions({ query: "efficiency", limit: 2, offset: 0 });
+      const secondSearchPage = listSessions({ query: "efficiency", limit: 2, offset: 2 });
+      const searchPageIds = [...firstSearchPage, ...secondSearchPage].map((session) => session.id);
+      if (searchPageIds.length !== 3 || new Set(searchPageIds).size !== 3 || !sessions.every((session) => searchPageIds.includes(session.id))) {
+        throw new Error("FTS session pages should not duplicate or omit tied search results: " + JSON.stringify(searchPageIds));
       }
 
       const sourceCache = getSourceScanCache();
@@ -2605,6 +2661,7 @@ assertFileContains("public/app.js", [
   "const MAX_TAG_INPUT_LENGTH = 1500",
   "const MAX_NOTE_TEXT_LENGTH = 20000",
   "const MAX_RESPONSE_ERROR_TEXT_LENGTH = 20000",
+  "const SESSION_LIST_PAGE_SIZE = 100",
   "const SESSION_MESSAGE_PAGE_SIZE = 200",
   "maxlength=\"${MAX_TAG_INPUT_LENGTH}\"",
   "maxlength=\"${MAX_NOTE_TEXT_LENGTH}\"",
@@ -2645,6 +2702,13 @@ assertFileContains("public/app.js", [
   "readLocalStorage(LAYOUT.storageKey)",
   "writeLocalStorage(LAYOUT.storageKey",
   "let selectSessionSequence = 0",
+  "id=\"load-more-sessions\"",
+  "await loadSessions({ append: true })",
+  "params.set(\"sessionOffset\", String(sessionOffset))",
+  "params.set(\"sessionLimit\", String(SESSION_LIST_PAGE_SIZE))",
+  "payload.sessionPage.offset !== sessionOffset",
+  "const sessionsById = new Map(state.sessions.map((session) => [session.id, session]))",
+  "elements.sessionList.scrollTop = scrollTop",
   "function sessionDetailRequestUrl",
   "messageOffset: String(messageOffset)",
   "messageLimit: String(SESSION_MESSAGE_PAGE_SIZE)",
@@ -2704,7 +2768,7 @@ assertFileContains("public/app.js", [
   "function annotationPayloadForStatus",
   "function filterSessionsForCurrentStatusView",
   "function renderNoSessionSelected",
-  "state.sessions = filterSessionsForCurrentStatusView(payload.sessions || [])",
+  "const pageSessions = filterSessionsForCurrentStatusView(payload.sessions || [])",
   "state.query = normalizedQuery",
   "params.set(\"q\", normalizedQuery)",
   "const preserveUrlSelection = Boolean(urlSessionId && state.selectedSessionId === urlSessionId)",
@@ -2844,6 +2908,7 @@ assertFileContains("public/index.html", [
 ]);
 
 assertFileContains("public/styles.css", [
+  ".session-pagination",
   ".transcript-progress",
   ".transcript-pagination",
   "grid-template-columns: repeat(2, minmax(0, 1fr))",
@@ -2864,6 +2929,7 @@ assertFileContains("src/db/repository.js", [
   "function normalizeQuery",
   "function escapeLikeQuery",
   "function normalizeLimit",
+  "function normalizeOffset",
   "function normalizeSourceId",
   "const normalizedSourceId = normalizeSourceId(sourceId)",
   "if (normalizedSourceId === null)",
@@ -2879,6 +2945,9 @@ assertFileContains("src/db/repository.js", [
   "favorite: archived ? false : Boolean(row.favorite)",
   "const normalizedQuery = normalizeQuery(query)",
   "const normalizedLimit = normalizeLimit(limit)",
+  "const normalizedOffset = normalizeOffset(offset)",
+  "ORDER BY rank, s.id ASC",
+  "sessions.id ASC",
   "a.favorite = 1 AND COALESCE(a.archived, 0) = 0",
   "if (updateArchived === true)",
   "nextFavorite = false",
@@ -3075,12 +3144,16 @@ assertFileContains("src/server.js", [
   "const MAX_SESSION_ID_LENGTH = 512",
   "const MAX_SOURCE_ID_LENGTH = 128",
   "const MAX_MESSAGE_PAGE_SIZE = 500",
+  "const MAX_SESSION_PAGE_SIZE = 300",
   "function normalizeSessionId",
   "function normalizeSourceId",
+  "function boundedPageFromSearchParams",
   "function messagePageFromSearchParams",
-  "searchParams.has(\"messageOffset\")",
-  "searchParams.has(\"messageLimit\")",
+  "function sessionPageFromSearchParams",
+  "searchParams.has(offsetName)",
+  "searchParams.has(limitName)",
   "error: \"Invalid message page.\"",
+  "error: \"Invalid session page.\"",
   "function sessionIdFromPayload",
   "function decodePathComponent",
   "Invalid session id encoding.",

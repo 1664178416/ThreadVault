@@ -35,10 +35,35 @@ export function runFullScan() {
   };
 }
 
-export function getDashboardData(query = "", filters = {}) {
+export function getDashboardData(query = "", filters = {}, sessionPage) {
+  const offset = sessionPage?.sessionOffset ?? 0;
+  const limit = sessionPage?.sessionLimit ?? 300;
+  const sessions = listSessions({
+    query,
+    ...filters,
+    offset,
+    limit: sessionPage ? limit + 1 : limit
+  });
+
+  if (!sessionPage) {
+    return {
+      stats: getStats(),
+      sessions
+    };
+  }
+
+  const hasMore = sessions.length > limit;
+  const pageSessions = hasMore ? sessions.slice(0, limit) : sessions;
   return {
     stats: getStats(),
-    sessions: listSessions({ query, limit: 300, ...filters })
+    sessions: pageSessions,
+    sessionPage: {
+      offset,
+      limit,
+      returned: pageSessions.length,
+      hasMore,
+      nextOffset: hasMore ? offset + pageSessions.length : null
+    }
   };
 }
 

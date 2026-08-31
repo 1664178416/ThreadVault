@@ -47,6 +47,7 @@ Notes:
 - `source_label` is stored directly on each session so the UI does not need a separate source lookup table.
 - `fingerprint` hashes the complete normalized session, including source path/status, adapter metadata, and message ids/content/metadata, so non-message source changes still refresh stored fields.
 - `metadata_json` stores adapter-specific fields and parser hints.
+- Session-list queries sort by update time and then `id`, providing deterministic `LIMIT/OFFSET` pages even when multiple sessions share a timestamp.
 
 ### `source_scan_cache`
 

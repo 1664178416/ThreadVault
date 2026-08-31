@@ -28,3 +28,5 @@
 - Converted session search to a transactionally migrated contentless FTS5 index so transcripts are not stored twice
 - Paginated dashboard transcript loading in 200-message chunks while preserving the full-detail contract for exports and internal actions
 - Deferred duplicate raw-process rendering until expansion and preserved scroll position plus annotation drafts while loading more messages
+- Paginated the session library in 100-item chunks so older conversations remain directly browsable without rendering 300 cards at startup
+- Added deterministic cross-page ordering, strict session-page validation, and incremental list state preservation

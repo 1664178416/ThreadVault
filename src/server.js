@@ -16,6 +16,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_SESSION_ID_LENGTH = 512;
 const MAX_SOURCE_ID_LENGTH = 128;
 const MAX_MESSAGE_PAGE_SIZE = 500;
+const MAX_SESSION_PAGE_SIZE = 300;
 const LOOPBACK_WRITE_HOSTS = ["127.0.0.1", "localhost", "::1"];
 
 function urlHost(host) {
@@ -119,9 +120,9 @@ function normalizeSourceId(value) {
   return sourceId;
 }
 
-function messagePageFromSearchParams(searchParams) {
-  const hasOffset = searchParams.has("messageOffset");
-  const hasLimit = searchParams.has("messageLimit");
+function boundedPageFromSearchParams(searchParams, offsetName, limitName, maximumLimit) {
+  const hasOffset = searchParams.has(offsetName);
+  const hasLimit = searchParams.has(limitName);
   if (!hasOffset && !hasLimit) {
     return undefined;
   }
@@ -129,24 +130,50 @@ function messagePageFromSearchParams(searchParams) {
     return null;
   }
 
-  const offsetValue = searchParams.get("messageOffset") || "";
-  const limitValue = searchParams.get("messageLimit") || "";
+  const offsetValue = searchParams.get(offsetName) || "";
+  const limitValue = searchParams.get(limitName) || "";
   if (!/^\d+$/.test(offsetValue) || !/^\d+$/.test(limitValue)) {
     return null;
   }
 
-  const messageOffset = Number(offsetValue);
-  const messageLimit = Number(limitValue);
+  const offset = Number(offsetValue);
+  const limit = Number(limitValue);
   if (
-    !Number.isSafeInteger(messageOffset) ||
-    !Number.isSafeInteger(messageLimit) ||
-    messageLimit < 1 ||
-    messageLimit > MAX_MESSAGE_PAGE_SIZE
+    !Number.isSafeInteger(offset) ||
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > maximumLimit
   ) {
     return null;
   }
 
-  return { messageOffset, messageLimit };
+  return { offset, limit };
+}
+
+function messagePageFromSearchParams(searchParams) {
+  const page = boundedPageFromSearchParams(
+    searchParams,
+    "messageOffset",
+    "messageLimit",
+    MAX_MESSAGE_PAGE_SIZE
+  );
+  return page && {
+    messageOffset: page.offset,
+    messageLimit: page.limit
+  };
+}
+
+function sessionPageFromSearchParams(searchParams) {
+  const page = boundedPageFromSearchParams(
+    searchParams,
+    "sessionOffset",
+    "sessionLimit",
+    MAX_SESSION_PAGE_SIZE
+  );
+  return page && {
+    sessionOffset: page.offset,
+    sessionLimit: page.limit
+  };
 }
 
 function decodePathComponent(value) {
@@ -386,12 +413,20 @@ function handleApi(request, response, url) {
     const favoritesOnly = url.searchParams.get("favoritesOnly") === "1";
     const includeArchived = url.searchParams.get("includeArchived") === "1";
     const archivedOnly = url.searchParams.get("archivedOnly") === "1";
+    const sessionPage = sessionPageFromSearchParams(url.searchParams);
+    if (sessionPage === null) {
+      sendJson(request, response, 400, {
+        ok: false,
+        error: "Invalid session page."
+      });
+      return;
+    }
     sendJson(request, response, 200, getDashboardData(query, {
       sourceId,
       favoritesOnly,
       includeArchived,
       archivedOnly
-    }));
+    }, sessionPage));
     return;
   }
 
